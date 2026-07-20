@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PhoneVerificationController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\StockSubscriptionController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -35,6 +36,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Browsing is open to any authenticated user; writes are admin-only
     // (enforced by ProductPolicy).
     Route::apiResource('products', ProductController::class);
+
+    // Ask to be notified when an out-of-stock product is available again.
+    Route::post('products/{product}/notify-me', StockSubscriptionController::class);
 
     // The user's own notification feed.
     Route::get('notifications', [NotificationController::class, 'index']);
