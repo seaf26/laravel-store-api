@@ -45,6 +45,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('notifications', [NotificationController::class, 'index']);
     Route::patch('notifications/{id}/read', [NotificationController::class, 'markAsRead']);
 
-    // Orders
+    // Orders — a user sees only their own; an admin sees all.
+    Route::get('orders', [OrderController::class, 'index']);
+    Route::get('orders/{order}', [OrderController::class, 'show']);
     Route::post('orders', [OrderController::class, 'store']);
 });
