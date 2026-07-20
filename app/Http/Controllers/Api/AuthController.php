@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\OtpPurpose;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\Otp\OtpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -14,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    public function __construct(private readonly OtpService $otp) {}
+
     /**
      * Register a new account using a phone number.
      */
@@ -21,8 +25,10 @@ class AuthController extends Controller
     {
         $user = User::create($request->validated());
 
+        $this->otp->issue($user->phone, OtpPurpose::PhoneVerification);
+
         return response()->json([
-            'message' => 'Account created.',
+            'message' => 'Account created. A verification code has been sent to your phone.',
             'user' => new UserResource($user),
         ], 201);
     }
