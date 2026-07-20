@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PhoneVerificationController;
+use App\Http\Controllers\Api\ProductController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -22,4 +23,15 @@ Route::prefix('auth')->group(function () {
     // Password reset
     Route::post('password/forgot', [PasswordResetController::class, 'forgot']);
     Route::post('password/reset', [PasswordResetController::class, 'reset']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Authenticated API
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth:sanctum')->group(function () {
+    // Browsing is open to any authenticated user; writes are admin-only
+    // (enforced by ProductPolicy).
+    Route::apiResource('products', ProductController::class);
 });
