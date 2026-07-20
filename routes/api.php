@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PhoneVerificationController;
 use App\Http\Controllers\Api\ProductController;
@@ -34,4 +35,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Browsing is open to any authenticated user; writes are admin-only
     // (enforced by ProductPolicy).
     Route::apiResource('products', ProductController::class);
+
+    // The user's own notification feed.
+    Route::get('notifications', [NotificationController::class, 'index']);
+    Route::patch('notifications/{id}/read', [NotificationController::class, 'markAsRead']);
 });
