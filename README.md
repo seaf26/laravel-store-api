@@ -142,6 +142,41 @@ set the `base_url`, `token`, and `admin_token` collection variables.
 
 ---
 
+## Diagrams
+
+> 📬 **Postman collection:** [`docs/postman_collection.json`](docs/postman_collection.json) — import it into
+> Postman to exercise every endpoint above (variables: `base_url`, `token`, `admin_token`).
+
+### Use case diagram
+Customer and Admin actors against the Store API, including `«include»` relationships
+(registration/password-reset both include *Send OTP*; *Place Order* includes the atomic
+*Reserve Stock* step) and the Admin-is-a-User generalization.
+
+![Use case diagram](docs/diagrams/use-case-diagram.png)
+
+### User flow
+The end-to-end customer journey: register → verify phone (OTP, with retry) → login →
+browse → place an order → atomic stock check → order created → status notifications,
+with the out-of-stock/restock-subscription branch, the idempotent-retry branch, and the
+password-reset side flow.
+
+![User flow diagram](docs/diagrams/user-flow-diagram.png)
+
+### Sequence — registration & phone verification (OTP)
+Customer → `AuthController` → `OtpService` → `SmsSender` → DB, from account creation
+through code delivery and verification, including the rate-limit/no-existence-leak note.
+
+![Sequence diagram — registration and OTP verification](docs/diagrams/sequence-auth-otp.png)
+
+### Sequence — place order (idempotent + atomic stock)
+Customer → `OrderController` → `OrderService` → DB. Shows the `alt [key already used] /
+else [new request]` idempotency branch, the `SELECT ... FOR UPDATE` row lock, and the
+rollback-on-insufficient-stock path — this mirrors `OrderService::place()` exactly.
+
+![Sequence diagram — place order](docs/diagrams/sequence-place-order.png)
+
+---
+
 ## Design decisions
 
 ### Events, Listeners and Observers
