@@ -10,11 +10,28 @@ return [
     | Which implementation of App\Services\Sms\SmsSender to use when delivering
     | one-time passwords. "log" writes the message to the application log, which
     | keeps local development and the test suite free of external dependencies.
-    | Swap this for a real gateway (Twilio, Vonage, ...) by binding another
-    | implementation in App\Providers\AppServiceProvider.
+    | "twilio" sends a real SMS via the Twilio REST API (see the twilio config
+    | block below). Add another provider the same way: implement SmsSender and
+    | register it in the match statement in App\Providers\AppServiceProvider.
     |
     */
     'sms_sender' => env('SMS_SENDER', 'log'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Twilio
+    |--------------------------------------------------------------------------
+    |
+    | Only used when sms_sender=twilio. Get a trial SID/token from
+    | https://www.twilio.com/try-twilio - trial accounts can only send to
+    | phone numbers you've verified in the Twilio console.
+    |
+    */
+    'twilio' => [
+        'sid' => env('TWILIO_SID'),
+        'token' => env('TWILIO_AUTH_TOKEN'),
+        'from' => env('TWILIO_FROM_NUMBER'),
+    ],
 
     /*
     |--------------------------------------------------------------------------

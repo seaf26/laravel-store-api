@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Services\Sms\LogSmsSender;
 use App\Services\Sms\SmsSender;
+use App\Services\Sms\TwilioSmsSender;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -17,6 +18,11 @@ class AppServiceProvider extends ServiceProvider
         // means implementing SmsSender and registering it here.
         $this->app->bind(SmsSender::class, function () {
             return match (config('store.sms_sender')) {
+                'twilio' => new TwilioSmsSender(
+                    sid: (string) config('store.twilio.sid'),
+                    token: (string) config('store.twilio.token'),
+                    from: (string) config('store.twilio.from'),
+                ),
                 default => new LogSmsSender,
             };
         });
