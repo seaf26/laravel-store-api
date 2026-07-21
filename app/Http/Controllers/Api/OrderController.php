@@ -2,18 +2,24 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Order\StoreOrderRequest;
+use App\Http\Requests\Order\UpdateOrderStatusRequest;
 use App\Http\Resources\OrderResource;
 use App\Models\Order;
 use App\Services\Orders\OrderService;
+use App\Services\Orders\OrderStatusService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class OrderController extends Controller
 {
-    public function __construct(private readonly OrderService $orders) {}
+    public function __construct(
+        private readonly OrderService $orders,
+        private readonly OrderStatusService $statuses,
+    ) {}
 
     /**
      * List orders. A regular user sees only their own; an admin sees all.
@@ -56,6 +62,33 @@ class OrderController extends Controller
         return (new OrderResource($order))
             ->response()
             ->setStatusCode(201);
+    }
+
+    /**
+     * Update an order's status (admin only). Records history and notifies the
+     * owner; resubmitting the current status is an idempotent no-op.
+     */
+    public function updateStatus(UpdateOrderStatusRequest $request, Order $order): JsonResponse
+    {
+        $this->authorize('updateStatus', $order);
+
+        $history = $this->statuses->change(
+            $order,
+            OrderStatus::from($request->validated('status')),
+            $request->user(),
+        );
+
+        if ($history === null) {
+            return response()->json([
+                'message' => 'Status unchanged.',
+                'data' => new OrderResource($order->load('items.product')),
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Order status updated.',
+            'data' => new OrderResource($order->fresh()->load('items.product')),
+        ]);
     }
 
     private function perPage(Request $request): int
