@@ -24,7 +24,7 @@
             "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api", "auth", "register"] },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Sara Ali\",\n  \"phone\": \"+201234567890\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}"
+              "raw": "{\n  \"name\": \"Saif Jamil\",\n  \"phone\": \"+201156683335\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}"
             }
           },
           "response": [
@@ -34,12 +34,12 @@
                 "method": "POST",
                 "header": [{ "key": "Accept", "value": "application/json" }],
                 "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api", "auth", "register"] },
-                "body": { "mode": "raw", "raw": "{\n  \"name\": \"Sara Ali\",\n  \"phone\": \"+201234567890\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}" }
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"Saif Jamil\",\n  \"phone\": \"+201156683335\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}" }
               },
               "status": "Created",
               "code": 201,
               "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"message\": \"Account created. A verification code has been sent to your phone.\",\n  \"user\": {\n    \"id\": 1,\n    \"name\": \"Sara Ali\",\n    \"phone\": \"+201234567890\",\n    \"is_admin\": false,\n    \"phone_verified_at\": null,\n    \"created_at\": \"2026-07-20T13:00:00+00:00\"\n  }\n}"
+              "body": "{\n  \"message\": \"Account created. A verification code has been sent to your phone.\",\n  \"user\": {\n    \"id\": 1,\n    \"name\": \"Saif Jamil\",\n    \"phone\": \"+201156683335\",\n    \"is_admin\": false,\n    \"phone_verified_at\": null,\n    \"created_at\": \"2026-07-20T13:00:00+00:00\"\n  }\n}"
             },
             {
               "name": "422 Validation error",
@@ -47,7 +47,7 @@
                 "method": "POST",
                 "header": [{ "key": "Accept", "value": "application/json" }],
                 "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api", "auth", "register"] },
-                "body": { "mode": "raw", "raw": "{\n  \"name\": \"Sara Ali\",\n  \"phone\": \"not-a-phone\",\n  \"password\": \"short\"\n}" }
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"Saif Jamil\",\n  \"phone\": \"not-a-phone\",\n  \"password\": \"short\"\n}" }
               },
               "status": "Unprocessable Content",
               "code": 422,
@@ -65,7 +65,7 @@
               { "key": "Content-Type", "value": "application/json" }
             ],
             "url": { "raw": "{{base_url}}/api/auth/verify-phone/request", "host": ["{{base_url}}"], "path": ["api", "auth", "verify-phone", "request"] },
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201234567890\"\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\"\n}" }
           },
           "response": [
             {
@@ -95,7 +95,7 @@
               { "key": "Content-Type", "value": "application/json" }
             ],
             "url": { "raw": "{{base_url}}/api/auth/verify-phone", "host": ["{{base_url}}"], "path": ["api", "auth", "verify-phone"] },
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201234567890\",\n  \"code\": \"123456\"\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\",\n  \"code\": \"123456\"\n}" }
           },
           "response": [
             {
@@ -137,7 +137,7 @@
               { "key": "Content-Type", "value": "application/json" }
             ],
             "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] },
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201234567890\",\n  \"password\": \"password123\"\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\",\n  \"password\": \"password123\"\n}" }
           },
           "response": [
             {
@@ -146,7 +146,7 @@
               "status": "OK",
               "code": 200,
               "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"token\": \"1|abcdefghijklmnopqrstuvwxyz\",\n  \"user\": {\n    \"id\": 1,\n    \"name\": \"Sara Ali\",\n    \"phone\": \"+201234567890\",\n    \"is_admin\": false,\n    \"phone_verified_at\": \"2026-07-20T13:05:00+00:00\",\n    \"created_at\": \"2026-07-20T13:00:00+00:00\"\n  }\n}"
+              "body": "{\n  \"token\": \"1|abcdefghijklmnopqrstuvwxyz\",\n  \"user\": {\n    \"id\": 1,\n    \"name\": \"Saif Jamil\",\n    \"phone\": \"+201156683335\",\n    \"is_admin\": false,\n    \"phone_verified_at\": \"2026-07-20T13:05:00+00:00\",\n    \"created_at\": \"2026-07-20T13:00:00+00:00\"\n  }\n}"
             },
             {
               "name": "422 Wrong credentials",
@@ -229,7 +229,7 @@
               { "key": "Content-Type", "value": "application/json" }
             ],
             "url": { "raw": "{{base_url}}/api/auth/password/forgot", "host": ["{{base_url}}"], "path": ["api", "auth", "password", "forgot"] },
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201234567890\"\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\"\n}" }
           },
           "response": [
             {
@@ -251,7 +251,7 @@
               { "key": "Content-Type", "value": "application/json" }
             ],
             "url": { "raw": "{{base_url}}/api/auth/password/reset", "host": ["{{base_url}}"], "path": ["api", "auth", "password", "reset"] },
-            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201234567890\",\n  \"code\": \"123456\",\n  \"password\": \"new-password123\",\n  \"password_confirmation\": \"new-password123\"\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\",\n  \"code\": \"123456\",\n  \"password\": \"new-password123\",\n  \"password_confirmation\": \"new-password123\"\n}" }
           },
           "response": [
             {
