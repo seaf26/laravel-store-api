@@ -28,6 +28,10 @@
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
+        <!-- Force the log driver for tests regardless of the developer's local
+             .env - otherwise SMS_SENDER=twilio (or any real provider) would
+             make live API calls during the suite. -->
+        <env name="SMS_SENDER" value="log"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
