@@ -78,11 +78,24 @@
             },
             {
               "name": "429 Too many requests",
-              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/verify-phone/request", "host": ["{{base_url}}"], "path": ["api", "auth", "verify-phone", "request"] } },
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Accept", "value": "application/json" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": { "raw": "{{base_url}}/api/auth/verify-phone/request", "host": ["{{base_url}}"], "path": ["api", "auth", "verify-phone", "request"] },
+                "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\"\n}" }
+              },
               "status": "Too Many Requests",
               "code": 429,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"message\": \"Too many verification codes requested. Please try again later.\"\n}"
+              "header": [
+                { "key": "Content-Type", "value": "application/json" },
+                { "key": "Retry-After", "value": "600" },
+                { "key": "X-RateLimit-Limit", "value": "3" },
+                { "key": "X-RateLimit-Remaining", "value": "0" }
+              ],
+              "body": "{\n  \"message\": \"Too many attempts. Please try again later.\"\n}"
             }
           ]
         },
@@ -549,7 +562,7 @@
               { "key": "Accept", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{token}}" },
               { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "order-2026-07-20-0001", "description": "Optional. Replaying the same key returns the original order." }
+              { "key": "Idempotency-Key", "value": "order-2026-07-20-0001", "description": "Optional, maximum 64 characters. The same normalized items replay the original order; different items return 409." }
             ],
             "url": { "raw": "{{base_url}}/api/orders", "host": ["{{base_url}}"], "path": ["api", "orders"] },
             "body": { "mode": "raw", "raw": "{\n  \"items\": [\n    { \"product_id\": 1, \"quantity\": 2 },\n    { \"product_id\": 3, \"quantity\": 1 }\n  ]\n}" }
@@ -573,6 +586,24 @@
                 { "key": "Idempotency-Replayed", "value": "true" }
               ],
               "body": "{\n  \"data\": {\n    \"id\": 10,\n    \"user_id\": 1,\n    \"status\": \"pending\",\n    \"total\": \"102.48\",\n    \"items\": [\n      { \"product_id\": 1, \"title\": \"Running Shoe\", \"quantity\": 2, \"unit_price\": \"49.99\", \"line_total\": \"99.98\" }\n    ],\n    \"created_at\": \"2026-07-20T13:40:00+00:00\",\n    \"updated_at\": \"2026-07-20T13:40:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "409 Idempotency conflict",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Accept", "value": "application/json" },
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Idempotency-Key", "value": "order-2026-07-20-0001" }
+                ],
+                "url": { "raw": "{{base_url}}/api/orders", "host": ["{{base_url}}"], "path": ["api", "orders"] },
+                "body": { "mode": "raw", "raw": "{\n  \"items\": [\n    { \"product_id\": 1, \"quantity\": 1 }\n  ]\n}" }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"The idempotency key was already used with a different request.\"\n}"
             },
             {
               "name": "422 Insufficient stock",

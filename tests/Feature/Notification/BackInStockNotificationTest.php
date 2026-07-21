@@ -7,6 +7,7 @@ use App\Listeners\SendBackInStockNotifications;
 use App\Models\Product;
 use App\Models\StockSubscription;
 use App\Models\User;
+use App\Notifications\BackInStockNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
@@ -14,6 +15,17 @@ use Tests\TestCase;
 class BackInStockNotificationTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_sms_uses_a_valid_utf_8_em_dash(): void
+    {
+        $product = Product::factory()->make(['title' => 'Travel Mug']);
+        $user = User::factory()->make();
+
+        $message = (new BackInStockNotification($product))->toSms($user);
+
+        $this->assertSame('Good news — Travel Mug is back in stock.', $message);
+        $this->assertTrue(mb_check_encoding($message, 'UTF-8'));
+    }
 
     public function test_a_user_can_subscribe_only_when_a_product_is_out_of_stock(): void
     {

@@ -14,6 +14,7 @@ use App\Services\Orders\OrderStatusService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
@@ -83,7 +84,9 @@ class OrderController extends Controller
         $idempotencyKey = $request->header('Idempotency-Key');
 
         if (is_string($idempotencyKey) && strlen($idempotencyKey) > 64) {
-            $idempotencyKey = null; // ignore an over-long/garbage key
+            throw ValidationException::withMessages([
+                'Idempotency-Key' => ['The idempotency key must not be greater than 64 characters.'],
+            ]);
         }
 
         $result = $this->orders->place(
@@ -115,7 +118,7 @@ class OrderController extends Controller
         if ($history === null) {
             return response()->json([
                 'message' => 'Status unchanged.',
-                'data' => new OrderResource($order->load('items.product')),
+                'data' => new OrderResource($order->refresh()->load('items.product')),
             ]);
         }
 

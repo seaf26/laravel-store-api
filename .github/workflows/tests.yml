@@ -7,7 +7,8 @@ on:
     branches: ['**']
 
 jobs:
-  test:
+  sqlite:
+    name: SQLite tests and quality gates
     runs-on: ubuntu-latest
 
     steps:
@@ -18,14 +19,71 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: mbstring, dom, fileinfo, sqlite3, pdo_sqlite
+          extensions: bcmath, mbstring, dom, fileinfo, sqlite3, pdo_sqlite
+          coverage: none
+
+      - name: Validate Composer files
+        run: composer validate --strict --no-check-publish
+
+      - name: Copy .env
+        run: cp .env.example .env
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Audit locked dependencies
+        run: composer audit --locked --no-interaction
+
+      - name: Generate application key
+        run: php artisan key:generate
+
+      - name: Check formatting
+        run: vendor/bin/pint --test
+
+      - name: Run tests
+        run: php artisan test
+
+  mysql:
+    name: MySQL 8 compatibility
+    runs-on: ubuntu-latest
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: laravel_test
+      DB_USERNAME: root
+      DB_PASSWORD: password
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: laravel_test
+          MYSQL_ROOT_PASSWORD: password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --password=password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: bcmath, mbstring, dom, fileinfo, pdo_mysql
           coverage: none
 
       - name: Copy .env
         run: cp .env.example .env
 
       - name: Install dependencies
-        run: composer install --prefer-dist --no-progress
+        run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Generate application key
         run: php artisan key:generate

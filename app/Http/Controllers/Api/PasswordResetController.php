@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\OtpPurpose;
+use App\Exceptions\TooManyOtpRequestsException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
@@ -23,7 +24,13 @@ class PasswordResetController extends Controller
         $phone = (string) $request->string('phone');
 
         if (User::where('phone', $phone)->exists()) {
-            $this->otp->issue($phone, OtpPurpose::PasswordReset);
+            try {
+                $this->otp->issue($phone, OtpPurpose::PasswordReset);
+            } catch (TooManyOtpRequestsException) {
+                // Keep the public response indistinguishable when the
+                // database/lock guard rejects delivery independently of the
+                // named middleware buckets.
+            }
         }
 
         // Identical response either way, so the endpoint cannot be used to

@@ -1,12 +1,13 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "seaf26/laravel-store-api",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
+    "description": "REST API for a Laravel online store with phone authentication, inventory, notifications, and concurrency-safe orders.",
+    "keywords": ["laravel", "ecommerce", "rest-api", "inventory", "orders"],
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "ext-bcmath": "*",
         "laravel/framework": "^13.8",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0"

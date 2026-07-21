@@ -9,13 +9,19 @@ status workflow.
 
 ## Requirements
 
-- PHP **8.2+** (developed on 8.3)
+- PHP **8.3+** with BCMath, Mbstring, and the PDO driver for your database
 - Composer 2
-- SQLite (bundled with PHP) — no external database server needed for development or tests
+- SQLite with `pdo_sqlite` for local development and the fast test suite
 
-The stack is database-driven for queues, cache and notifications, so nothing else is
-required to run locally. For production you can point `DB_CONNECTION` at MySQL/Postgres
-and `QUEUE_CONNECTION`/`FILESYSTEM_DISK` at real infrastructure without code changes.
+The stack is database-driven for queues, cache, and notifications, so no additional service
+is required locally. MySQL and PostgreSQL are supported production databases; install their
+matching PDO extension.
+
+Product image code explicitly reads and writes the disk named `public`. Locally that disk
+uses `storage/app/public`, exposed by `php artisan storage:link`. Changing only
+`FILESYSTEM_DISK` does not redirect product images. A production deployment that needs
+shared/object storage must configure the `public` disk itself with the appropriate driver,
+credentials, public URL, and visibility.
 
 ---
 
@@ -45,11 +51,19 @@ php artisan serve                 # http://localhost:8000
 
 # Queue worker — REQUIRED for notifications to be delivered
 php artisan queue:work
+
+# Local scheduler worker — runs scheduled maintenance
+php artisan schedule:work
 ```
 
 Notifications (new product, back-in-stock, order status) are dispatched to the **database
 queue** and processed by the worker, so they never delay an API response. If you don't run
 `queue:work`, the API still works but queued notifications stay pending.
+
+In production, keep at least one queue worker under a process supervisor and invoke
+`php artisan schedule:run` every minute from cron (or use an equivalent scheduler). The
+application runs `model:prune` daily, removing OTP records older than one day. Without the
+scheduler, these spent or expired rows accumulate.
 
 ### Tests
 
@@ -57,12 +71,13 @@ queue** and processed by the worker, so they never delay an API response. If you
 php artisan test
 ```
 
-The suite runs against an in-memory SQLite database (configured in `phpunit.xml`, which
-also forces `SMS_SENDER=log` regardless of your local `.env`, so the suite never makes a
-real Twilio call) and is fully self-contained — **108 tests / 334 assertions**.
+The fast suite runs against an in-memory SQLite database (configured in `phpunit.xml`,
+which also forces `SMS_SENDER=log` regardless of your local `.env`, so the suite never
+makes a real Twilio call) and is fully self-contained.
 
-A GitHub Actions workflow (`.github/workflows/tests.yml`) runs the same suite on every push
-and pull request, on PHP 8.3.
+GitHub Actions runs Composer validation and the locked-dependency security audit, Pint,
+and the full SQLite suite on every push and pull request. A separate MySQL 8 job runs the
+suite with `pdo_mysql` to catch production-database compatibility issues.
 
 ---
 
@@ -118,6 +133,22 @@ number.
 
 Forgot your password? `POST /api/auth/password/forgot` sends a reset code, then
 `POST /api/auth/password/reset` sets a new password and revokes all existing tokens.
+
+### Authentication rate limits
+
+Abuse-sensitive operations are limited independently by a privacy-safe client-source key
+and a one-way-derived normalized phone key:
+
+| Operation | Limit |
+| --- | --- |
+| Login | 5 attempts per minute per source and phone |
+| Verification/registration/password-reset code issue | 3 per 10 minutes per phone and purpose, plus a 20-per-minute source ceiling |
+| Verification and password-reset code attempt | 5 per minute per source and phone/purpose |
+
+An exhausted bucket returns `429` with `Retry-After`, rate-limit headers, and
+`{"message":"Too many attempts. Please try again later."}`. Public code-request and
+forgot-password responses remain the same for known and unknown phone numbers, including
+when throttled.
 
 ### SMS delivery
 
@@ -183,10 +214,25 @@ All endpoints are under `/api` and return JSON. Protected routes require
 | GET | `/notifications` | ✔ | The user's own notifications (same `data`/`links`/`meta` pagination shape as products/orders) |
 | PATCH | `/notifications/{id}/read` | ✔ | Mark a notification as read |
 
-A full request/response contract — headers, bodies, and example success **and** error
-responses — is in the Postman collection at
+A runnable request collection with representative success and error responses is in the
+Postman collection at
 [`docs/postman_collection.json`](docs/postman_collection.json). Import it into Postman and
 set the `base_url`, `token`, and `admin_token` collection variables.
+
+The authoritative transaction, locking, fingerprint, and OTP-claim diagrams are kept as
+renderable Mermaid source in [`docs/reliability.md`](docs/reliability.md). The exact changed
+HTTP behaviors are also recorded in the
+[`API reliability contract`](specs/001-api-reliability-hardening/contracts/api-contract.md).
+
+### Order idempotency
+
+`Idempotency-Key` values may be at most 64 characters. Repeating a key with the same
+normalized product IDs and quantities returns the original order with `200` and
+`Idempotency-Replayed: true`, even if item lines were reordered. Reusing that key for a
+different normalized order returns `409` with
+`{"message":"The idempotency key was already used with a different request."}` and does
+not change orders or stock. Keys longer than 64 characters return the standard `422`
+validation response.
 
 ---
 
@@ -195,15 +241,18 @@ set the `base_url`, `token`, and `admin_token` collection variables.
 > 📬 **Postman collection:** [`docs/postman_collection.json`](docs/postman_collection.json) — import it into
 > Postman to exercise every endpoint above (variables: `base_url`, `token`, `admin_token`).
 >
-> The diagrams below predate the `/auth/me`, `/auth/logout-all`, cancel-restocks-stock, and
-> SMS-notification additions — they still accurately describe registration, OTP, and order
-> placement, which are unchanged.
+> The PNG diagrams below are high-level overview snapshots and intentionally omit some
+> secondary endpoints and reliability branches. For the current `request_hash`, matching
+> replay versus `409` conflict, atomic OTP claim, and locked status-transition flows, use
+> the authoritative Mermaid diagrams in [`docs/reliability.md`](docs/reliability.md).
 
-### Entity-relationship diagram
+### Entity-relationship overview
 All 9 domain tables and how they connect: `users` and `products` as the two hubs,
 `orders` as the central transaction, `order_items`/`stock_subscriptions` as the
 many-to-many join tables, `idempotency_keys`/`order_status_histories` hanging off
-`orders`, and `otp_codes` linked to `users` only by the `phone` value (no FK).
+`orders`, and `otp_codes` linked to `users` only by the `phone` value (no FK). This snapshot
+does not show the later `idempotency_keys.request_hash` column; the current reliability
+schema is in [`docs/reliability.md`](docs/reliability.md#reliability-data-model).
 
 ![Entity-relationship diagram](docs/diagrams/erd.png)
 
@@ -228,10 +277,12 @@ through code delivery and verification, including the rate-limit/no-existence-le
 
 ![Sequence diagram — registration and OTP verification](docs/diagrams/sequence-auth-otp.png)
 
-### Sequence — place order (idempotent + atomic stock)
+### Sequence overview — place order (idempotent + atomic stock)
 Customer → `OrderController` → `OrderService` → DB. Shows the `alt [key already used] /
 else [new request]` idempotency branch, the `SELECT ... FOR UPDATE` row lock, and the
-rollback-on-insufficient-stock path — this mirrors `OrderService::place()` exactly.
+rollback-on-insufficient-stock path. This older snapshot does not distinguish a matching
+fingerprint replay from a mismatched `409`; the current sequence is in
+[`docs/reliability.md`](docs/reliability.md#order-placement-and-idempotency).
 
 ![Sequence diagram — place order](docs/diagrams/sequence-place-order.png)
 
@@ -284,9 +335,9 @@ All listeners are `ShouldQueue` + `afterCommit`.
   and expire after `OTP_TTL_MINUTES` (default 10). Issuing a new code invalidates the
   previous one, and codes are scoped by purpose (a verification code can't reset a
   password). The plain code is returned by **no** API response.
-- OTP issuance is **rate limited per phone number** (`429` after `OTP_MAX_PER_WINDOW`), and
-  request/forgot endpoints return an identical response whether or not the phone exists, so
-  they cannot be used to enumerate accounts.
+- OTP issuance and redemption use the privacy-safe limits documented above. Request and
+  forgot-password endpoints return an identical response whether or not the phone exists,
+  so they cannot be used to enumerate accounts.
 
 ### Order status workflow
 - Allowed transitions: `pending → confirmed → processing → shipped → delivered`, with
@@ -331,4 +382,5 @@ app/
 database/seeders/   AdminUserSeeder, ProductSeeder
 config/store.php    OTP, SMS-sender/Twilio, and admin-seed settings
 docs/postman_collection.json
+docs/reliability.md       authoritative reliability diagrams and verification limits
 ```

@@ -58,6 +58,44 @@ class LoginTest extends TestCase
             ->assertJsonPath('message', 'Phone number is not verified.');
     }
 
+    public function test_login_is_rate_limited_to_five_attempts_per_source(): void
+    {
+        for ($attempt = 1; $attempt <= 5; $attempt++) {
+            $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.10'])
+                ->postJson('/api/auth/login', [
+                    'phone' => '+2010000000'.str_pad((string) $attempt, 2, '0', STR_PAD_LEFT),
+                    'password' => 'wrong-password',
+                ])->assertStatus(422);
+        }
+
+        $response = $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.10'])
+            ->postJson('/api/auth/login', [
+                'phone' => '+201000000099',
+                'password' => 'wrong-password',
+            ]);
+
+        $this->assertStableThrottleResponse($response, 5);
+    }
+
+    public function test_login_is_rate_limited_to_five_attempts_per_trimmed_phone_across_sources(): void
+    {
+        for ($attempt = 1; $attempt <= 5; $attempt++) {
+            $this->withServerVariables(['REMOTE_ADDR' => "198.51.100.{$attempt}"])
+                ->postJson('/api/auth/login', [
+                    'phone' => ' +201234567890 ',
+                    'password' => 'wrong-password',
+                ])->assertStatus(422);
+        }
+
+        $response = $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.99'])
+            ->postJson('/api/auth/login', [
+                'phone' => '+201234567890',
+                'password' => 'wrong-password',
+            ]);
+
+        $this->assertStableThrottleResponse($response, 5);
+    }
+
     public function test_a_user_can_log_out_and_the_token_is_revoked(): void
     {
         $user = User::factory()->create([
@@ -123,5 +161,16 @@ class LoginTest extends TestCase
 
         $this->app['auth']->forgetGuards();
         $this->withToken($tokenB)->getJson('/api/auth/me')->assertStatus(401);
+    }
+
+    private function assertStableThrottleResponse($response, int $limit): void
+    {
+        $response->assertStatus(429)
+            ->assertExactJson([
+                'message' => 'Too many attempts. Please try again later.',
+            ])
+            ->assertHeader('Retry-After')
+            ->assertHeader('X-RateLimit-Limit', (string) $limit)
+            ->assertHeader('X-RateLimit-Remaining', '0');
     }
 }

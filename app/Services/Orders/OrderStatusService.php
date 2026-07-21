@@ -23,33 +23,41 @@ class OrderStatusService
      */
     public function change(Order $order, OrderStatus $to, User $admin): ?OrderStatusHistory
     {
-        $from = $order->status;
-
-        // Submitting the current status again is a no-op.
-        if ($from === $to) {
-            return null;
-        }
-
-        if (! $from->canTransitionTo($to)) {
-            throw new InvalidStatusTransitionException($from, $to);
-        }
-
         // The status update, any restock, and the history row are written
         // together, so the audit trail can never diverge from the order's
         // actual status and stock can never be silently lost or duplicated.
-        $history = DB::transaction(function () use ($order, $from, $to, $admin) {
-            if ($to === OrderStatus::Cancelled) {
-                $this->restockItems($order);
+        $history = DB::transaction(function () use ($order, $to, $admin) {
+            $lockedOrder = Order::query()
+                ->whereKey($order->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $from = $lockedOrder->status;
+
+            // Submitting the latest committed status again is a no-op.
+            if ($from === $to) {
+                return null;
             }
 
-            $order->update(['status' => $to]);
+            if (! $from->canTransitionTo($to)) {
+                throw new InvalidStatusTransitionException($from, $to);
+            }
 
-            return $order->statusHistories()->create([
+            if ($to === OrderStatus::Cancelled) {
+                $this->restockItems($lockedOrder);
+            }
+
+            $lockedOrder->update(['status' => $to]);
+
+            return $lockedOrder->statusHistories()->create([
                 'from_status' => $from,
                 'to_status' => $to,
                 'changed_by' => $admin->id,
             ]);
-        });
+        }, attempts: 3);
+
+        if ($history === null) {
+            return null;
+        }
 
         // Dispatched after commit; the queued listener notifies the owner off
         // the request cycle.

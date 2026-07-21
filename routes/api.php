@@ -15,19 +15,25 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 Route::prefix('auth')->group(function () {
-    Route::post('register', [AuthController::class, 'register']);
-    Route::post('login', [AuthController::class, 'login']);
+    Route::post('register', [AuthController::class, 'register'])
+        ->middleware('throttle:phone-verification-issue');
+    Route::post('login', [AuthController::class, 'login'])
+        ->middleware('throttle:login');
     Route::get('me', [AuthController::class, 'me'])->middleware('auth:sanctum');
     Route::post('logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
     Route::post('logout-all', [AuthController::class, 'logoutAll'])->middleware('auth:sanctum');
 
     // Phone verification
-    Route::post('verify-phone/request', [PhoneVerificationController::class, 'request']);
-    Route::post('verify-phone', [PhoneVerificationController::class, 'verify']);
+    Route::post('verify-phone/request', [PhoneVerificationController::class, 'request'])
+        ->middleware('throttle:phone-verification-issue');
+    Route::post('verify-phone', [PhoneVerificationController::class, 'verify'])
+        ->middleware('throttle:phone-verification-attempt');
 
     // Password reset
-    Route::post('password/forgot', [PasswordResetController::class, 'forgot']);
-    Route::post('password/reset', [PasswordResetController::class, 'reset']);
+    Route::post('password/forgot', [PasswordResetController::class, 'forgot'])
+        ->middleware('throttle:password-reset-issue');
+    Route::post('password/reset', [PasswordResetController::class, 'reset'])
+        ->middleware('throttle:password-reset-attempt');
 });
 
 /*

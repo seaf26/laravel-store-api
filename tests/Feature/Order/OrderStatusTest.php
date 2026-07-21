@@ -9,7 +9,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\StockSubscription;
 use App\Models\User;
-use App\Notifications\OrderStatusChangedNotification;
+use App\Services\Orders\OrderStatusService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
@@ -246,5 +246,67 @@ class OrderStatusTest extends TestCase
         $this->assertSame(3, $product->fresh()->stock);
         $this->assertCount(1, $subscriber->fresh()->notifications);
         $this->assertSame('back_in_stock', $subscriber->notifications->first()->data['type']);
+    }
+
+    public function test_a_stale_order_is_validated_against_its_latest_committed_status(): void
+    {
+        Event::fake([OrderStatusChanged::class]);
+        $admin = User::factory()->admin()->create();
+        $order = $this->order(OrderStatus::Pending);
+        $staleOrder = Order::findOrFail($order->id);
+
+        $order->update(['status' => OrderStatus::Confirmed]);
+
+        $history = app(OrderStatusService::class)->change(
+            $staleOrder,
+            OrderStatus::Processing,
+            $admin,
+        );
+
+        $this->assertNotNull($history);
+        $this->assertSame('confirmed', $history->from_status->value);
+        $this->assertSame('processing', $order->fresh()->status->value);
+    }
+
+    public function test_a_stale_duplicate_cancellation_does_not_restock_or_write_history_twice(): void
+    {
+        Event::fake([OrderStatusChanged::class]);
+        $admin = User::factory()->admin()->create();
+        $product = Product::factory()->create(['stock' => 5]);
+        $order = $this->order(OrderStatus::Pending);
+        $order->items()->create([
+            'product_id' => $product->id,
+            'quantity' => 2,
+            'unit_price' => $product->price,
+        ]);
+        $firstRequestOrder = Order::findOrFail($order->id);
+        $staleDuplicateOrder = Order::findOrFail($order->id);
+        $service = app(OrderStatusService::class);
+
+        $this->assertNotNull($service->change($firstRequestOrder, OrderStatus::Cancelled, $admin));
+        $this->assertNull($service->change($staleDuplicateOrder, OrderStatus::Cancelled, $admin));
+
+        $this->assertSame(7, $product->fresh()->stock);
+        $this->assertDatabaseCount('order_status_histories', 1);
+    }
+
+    public function test_a_no_op_response_refreshes_the_order_after_the_status_service_runs(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $order = $this->order(OrderStatus::Pending);
+        $statusService = $this->mock(OrderStatusService::class);
+        $statusService->shouldReceive('change')
+            ->once()
+            ->andReturnUsing(function (Order $staleOrder): null {
+                Order::whereKey($staleOrder->id)->update(['status' => OrderStatus::Confirmed]);
+
+                return null;
+            });
+
+        $this->actingAs($admin)
+            ->patchJson("/api/orders/{$order->id}/status", ['status' => 'pending'])
+            ->assertOk()
+            ->assertJsonPath('message', 'Status unchanged.')
+            ->assertJsonPath('data.status', 'confirmed');
     }
 }

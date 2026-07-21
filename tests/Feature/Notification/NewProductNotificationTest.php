@@ -6,7 +6,6 @@ use App\Events\ProductCreated;
 use App\Listeners\SendNewProductNotifications;
 use App\Models\Product;
 use App\Models\User;
-use App\Notifications\NewProductNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;

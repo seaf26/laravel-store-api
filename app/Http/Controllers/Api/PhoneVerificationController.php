@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\OtpPurpose;
+use App\Exceptions\TooManyOtpRequestsException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\RequestVerificationCodeRequest;
 use App\Http\Requests\Auth\VerifyPhoneRequest;
@@ -27,7 +28,13 @@ class PhoneVerificationController extends Controller
         // response is identical either way so the endpoint cannot be used to
         // discover which phone numbers are registered.
         if ($user && ! $user->hasVerifiedPhone()) {
-            $this->otp->issue($phone, OtpPurpose::PhoneVerification);
+            try {
+                $this->otp->issue($phone, OtpPurpose::PhoneVerification);
+            } catch (TooManyOtpRequestsException) {
+                // The named middleware is the public throttling contract. The
+                // database/lock guard is defense in depth and must not make a
+                // registered phone distinguishable from an unknown one.
+            }
         }
 
         return response()->json([

@@ -30,7 +30,7 @@ class BackInStockNotification extends Notification
             return null;
         }
 
-        return "Good news â {$this->product->title} is back in stock.";
+        return "Good news — {$this->product->title} is back in stock.";
     }
 
     /**

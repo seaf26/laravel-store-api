@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\User;
 use App\Notifications\NewProductNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class NotificationControllerTest extends TestCase
@@ -121,7 +122,7 @@ class NotificationControllerTest extends TestCase
     {
         $user = User::factory()->create();
 
-        $this->actingAs($user)->patchJson('/api/notifications/'.\Illuminate\Support\Str::uuid().'/read')
+        $this->actingAs($user)->patchJson('/api/notifications/'.Str::uuid().'/read')
             ->assertNotFound();
     }
 
