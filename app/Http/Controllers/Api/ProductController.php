@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\ProductCreated;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Product\StoreProductRequest;
 use App\Http\Requests\Product\UpdateProductRequest;
@@ -43,6 +44,10 @@ class ProductController extends Controller
         $data['image_path'] = $request->file('image')->store('products', 'public');
 
         $product = Product::create($data);
+
+        // Fan-out to customers happens on a queued listener, so it never delays
+        // this response.
+        ProductCreated::dispatch($product);
 
         return (new ProductResource($product))
             ->response()
