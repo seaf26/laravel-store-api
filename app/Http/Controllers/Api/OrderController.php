@@ -58,10 +58,15 @@ class OrderController extends Controller
 
     /**
      * Show a single order, if the caller owns it or is an admin.
+     *
+     * A non-owner gets 404, not 403: an order ID is not something another
+     * user should be able to confirm exists just by probing this endpoint.
      */
     public function show(Request $request, Order $order): OrderResource
     {
-        $this->authorize('view', $order);
+        if ($request->user()->cannot('view', $order)) {
+            abort(404);
+        }
 
         return new OrderResource($order->load('items.product'));
     }

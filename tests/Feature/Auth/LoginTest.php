@@ -83,4 +83,45 @@ class LoginTest extends TestCase
     {
         $this->postJson('/api/auth/logout')->assertStatus(401);
     }
+
+    public function test_a_user_can_fetch_their_own_profile(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->getJson('/api/auth/me')
+            ->assertOk()
+            ->assertJsonPath('user.id', $user->id)
+            ->assertJsonPath('user.phone', $user->phone);
+    }
+
+    public function test_fetching_the_profile_requires_authentication(): void
+    {
+        $this->getJson('/api/auth/me')->assertStatus(401);
+    }
+
+    public function test_logout_all_revokes_every_token_for_the_user(): void
+    {
+        $user = User::factory()->create([
+            'phone' => '+201234567890',
+            'password' => 'password123',
+        ]);
+
+        $tokenA = $this->postJson('/api/auth/login', [
+            'phone' => '+201234567890',
+            'password' => 'password123',
+        ])->json('token');
+
+        $tokenB = $this->postJson('/api/auth/login', [
+            'phone' => '+201234567890',
+            'password' => 'password123',
+        ])->json('token');
+
+        $this->withToken($tokenA)->postJson('/api/auth/logout-all')->assertOk();
+
+        $this->app['auth']->forgetGuards();
+        $this->withToken($tokenA)->getJson('/api/auth/me')->assertStatus(401);
+
+        $this->app['auth']->forgetGuards();
+        $this->withToken($tokenB)->getJson('/api/auth/me')->assertStatus(401);
+    }
 }

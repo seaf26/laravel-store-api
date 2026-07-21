@@ -46,17 +46,31 @@ class NotificationControllerTest extends TestCase
         // Below the floor: clamped up to 1.
         $this->actingAs($user)->getJson('/api/notifications?per_page=0')
             ->assertOk()
-            ->assertJsonPath('per_page', 1);
+            ->assertJsonPath('meta.per_page', 1);
 
         // Above the ceiling: clamped down to 100.
         $this->actingAs($user)->getJson('/api/notifications?per_page=500')
             ->assertOk()
-            ->assertJsonPath('per_page', 100);
+            ->assertJsonPath('meta.per_page', 100);
 
         // A sane value in range is respected as-is.
         $this->actingAs($user)->getJson('/api/notifications?per_page=5')
             ->assertOk()
-            ->assertJsonPath('per_page', 5);
+            ->assertJsonPath('meta.per_page', 5);
+    }
+
+    public function test_the_response_uses_the_same_pagination_shape_as_products_and_orders(): void
+    {
+        $user = User::factory()->create();
+        $this->notifyUser($user);
+
+        $this->actingAs($user)->getJson('/api/notifications')
+            ->assertOk()
+            ->assertJsonStructure([
+                'data',
+                'links' => ['first', 'last', 'prev', 'next'],
+                'meta' => ['current_page', 'last_page', 'per_page', 'total'],
+            ]);
     }
 
     public function test_a_user_can_mark_their_own_notification_as_read(): void

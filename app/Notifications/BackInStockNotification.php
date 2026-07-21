@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\Product;
+use App\Notifications\Channels\SmsChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
@@ -17,7 +18,19 @@ class BackInStockNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        return [SmsChannel::class, 'database'];
+    }
+
+    /**
+     * Texted only to a notifiable with a verified phone number.
+     */
+    public function toSms(object $notifiable): ?string
+    {
+        if (! $notifiable->hasVerifiedPhone()) {
+            return null;
+        }
+
+        return "Good news â {$this->product->title} is back in stock.";
     }
 
     /**

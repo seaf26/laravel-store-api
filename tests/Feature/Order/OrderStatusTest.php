@@ -6,6 +6,8 @@ use App\Enums\OrderStatus;
 use App\Events\OrderStatusChanged;
 use App\Listeners\SendOrderStatusNotification;
 use App\Models\Order;
+use App\Models\Product;
+use App\Models\StockSubscription;
 use App\Models\User;
 use App\Notifications\OrderStatusChangedNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -186,5 +188,63 @@ class OrderStatusTest extends TestCase
             'order_id' => $order->id,
             'to_status' => 'confirmed',
         ]);
+    }
+
+    public function test_cancelling_an_order_restocks_its_items(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $owner = User::factory()->create();
+        $productA = Product::factory()->create(['stock' => 5]);
+        $productB = Product::factory()->create(['stock' => 2]);
+
+        $order = Order::create(['user_id' => $owner->id, 'status' => OrderStatus::Pending, 'total' => 0]);
+        $order->items()->createMany([
+            ['product_id' => $productA->id, 'quantity' => 3, 'unit_price' => $productA->price],
+            ['product_id' => $productB->id, 'quantity' => 1, 'unit_price' => $productB->price],
+        ]);
+
+        $this->actingAs($admin)
+            ->patchJson("/api/orders/{$order->id}/status", ['status' => 'cancelled'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'cancelled');
+
+        $this->assertSame(8, $productA->fresh()->stock);
+        $this->assertSame(3, $productB->fresh()->stock);
+    }
+
+    public function test_a_non_cancelling_transition_does_not_touch_stock(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $owner = User::factory()->create();
+        $product = Product::factory()->create(['stock' => 5]);
+
+        $order = Order::create(['user_id' => $owner->id, 'status' => OrderStatus::Pending, 'total' => 0]);
+        $order->items()->create(['product_id' => $product->id, 'quantity' => 2, 'unit_price' => $product->price]);
+
+        $this->actingAs($admin)
+            ->patchJson("/api/orders/{$order->id}/status", ['status' => 'confirmed'])
+            ->assertOk();
+
+        $this->assertSame(5, $product->fresh()->stock);
+    }
+
+    public function test_cancelling_an_order_for_an_out_of_stock_product_triggers_the_restock_notification(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $owner = User::factory()->create();
+        $subscriber = User::factory()->create();
+        $product = Product::factory()->outOfStock()->create();
+        StockSubscription::create(['user_id' => $subscriber->id, 'product_id' => $product->id]);
+
+        $order = Order::create(['user_id' => $owner->id, 'status' => OrderStatus::Pending, 'total' => 0]);
+        $order->items()->create(['product_id' => $product->id, 'quantity' => 3, 'unit_price' => $product->price]);
+
+        $this->actingAs($admin)
+            ->patchJson("/api/orders/{$order->id}/status", ['status' => 'cancelled'])
+            ->assertOk();
+
+        $this->assertSame(3, $product->fresh()->stock);
+        $this->assertCount(1, $subscriber->fresh()->notifications);
+        $this->assertSame('back_in_stock', $subscriber->notifications->first()->data['type']);
     }
 }

@@ -62,6 +62,16 @@ class AuthController extends Controller
     }
 
     /**
+     * The authenticated user's own profile.
+     */
+    public function me(Request $request): JsonResponse
+    {
+        return response()->json([
+            'user' => new UserResource($request->user()),
+        ]);
+    }
+
+    /**
      * Revoke the token used to authenticate the current request.
      */
     public function logout(Request $request): JsonResponse
@@ -70,6 +80,18 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Logged out.',
+        ]);
+    }
+
+    /**
+     * Revoke every token for the user (log out of all devices).
+     */
+    public function logoutAll(Request $request): JsonResponse
+    {
+        $request->user()->tokens()->delete();
+
+        return response()->json([
+            'message' => 'Logged out of all devices.',
         ]);
     }
 }

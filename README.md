@@ -2,7 +2,8 @@
 
 A REST-only backend for a small online store, built with **Laravel 13**. It provides
 phone-number authentication, admin product management with image upload, a queue-backed
-notification system, and concurrency-safe order processing with a full status workflow.
+notification system (database + SMS), and concurrency-safe order processing with a full
+status workflow.
 
 ---
 
@@ -28,7 +29,7 @@ composer install
 cp .env.example .env
 php artisan key:generate
 
-# 3. Database (SQLite) + seed the admin account
+# 3. Database (SQLite) + seed the admin account and a sample product catalogue
 touch database/database.sqlite
 php artisan migrate --seed
 
@@ -56,15 +57,40 @@ queue** and processed by the worker, so they never delay an API response. If you
 php artisan test
 ```
 
-The suite runs against an in-memory SQLite database (configured in `phpunit.xml`) and is
-fully self-contained — **83 tests / 269 assertions**.
+The suite runs against an in-memory SQLite database (configured in `phpunit.xml`, which
+also forces `SMS_SENDER=log` regardless of your local `.env`, so the suite never makes a
+real Twilio call) and is fully self-contained — **108 tests / 334 assertions**.
+
+A GitHub Actions workflow (`.github/workflows/tests.yml`) runs the same suite on every push
+and pull request, on PHP 8.3.
 
 ---
 
-## Seeded admin
+## Seeding
 
-`php artisan migrate --seed` (or `php artisan db:seed`) creates an admin account from
-`config/store.php` / your `.env`:
+`php artisan migrate --seed` (or `php artisan db:seed`) runs both seeders:
+
+| Seeder | What it creates | Re-run behaviour |
+| --- | --- | --- |
+| `AdminUserSeeder` | One admin account, already phone-verified (see table below) | Idempotent — `updateOrCreate` by phone |
+| `ProductSeeder` | 6 realistic products, one of them out of stock | Skips entirely if any product already exists |
+
+Run a single seeder on its own (e.g. after a `migrate:fresh`, or to add the catalogue to a
+database that only has the admin):
+
+```bash
+php artisan db:seed --class=AdminUserSeeder
+php artisan db:seed --class=ProductSeeder
+```
+
+`ProductSeeder` is a fixed 6-row catalogue meant for manual/Postman testing, not bulk data.
+To generate more for pagination testing, use the factory directly:
+
+```bash
+php artisan tinker --execute="App\Models\Product::factory()->count(50)->create();"
+```
+
+### Seeded admin
 
 | Field | Env var | Default |
 | --- | --- | --- |
@@ -81,17 +107,37 @@ token.
 Authentication uses **Laravel Sanctum** bearer tokens. The account identity is the phone
 number.
 
-1. `POST /api/auth/register` — creates the account and sends a 6-digit verification code.
-2. The code is delivered through the configured SMS gateway. In development the gateway is
-   `LogSmsSender`, so **the code is written to `storage/logs/laravel.log`** (look for
-   `SMS dispatched`). Swap in a real provider by binding `App\Services\Sms\SmsSender` in
-   `AppServiceProvider`.
+1. `POST /api/auth/register` — creates the account and sends a 6-digit sign-up code.
+2. The code is delivered through the configured SMS gateway (see **SMS delivery** below).
 3. `POST /api/auth/verify-phone` — confirms the phone. Login is blocked until this is done.
 4. `POST /api/auth/login` — returns a token. Send it as `Authorization: Bearer <token>` on
    protected routes.
+5. `GET /api/auth/me` — fetch the authenticated user's own profile.
+6. `POST /api/auth/logout` — revokes only the token used on the request.
+   `POST /api/auth/logout-all` — revokes every token for the user (all devices/sessions).
 
 Forgot your password? `POST /api/auth/password/forgot` sends a reset code, then
 `POST /api/auth/password/reset` sets a new password and revokes all existing tokens.
+
+### SMS delivery
+
+`App\Services\Sms\SmsSender` is a swappable interface, selected by `SMS_SENDER` in `.env`:
+
+| `SMS_SENDER` | Driver | Behaviour |
+| --- | --- | --- |
+| `log` (default) | `LogSmsSender` | Writes the message to `storage/logs/laravel.log` (look for `SMS dispatched`) — zero external dependency, used automatically in tests. |
+| `twilio` | `TwilioSmsSender` | Sends a real SMS via the Twilio REST API. Requires `TWILIO_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` in `.env` (see `.env.example`). A [free trial account](https://www.twilio.com/try-twilio) can only send to phone numbers you've verified in the Twilio console, and every message is prefixed with a "Sent from your Twilio trial account" notice by Twilio itself until the account is upgraded — that prefix isn't something this app controls. |
+
+Add another provider by implementing `SmsSender` and registering it in the `match` in
+`App\Providers\AppServiceProvider`.
+
+The SMS **wording** differs by purpose (`App\Enums\OtpPurpose::smsLabel()`): a sign-up code
+and a password-reset code read differently, so a customer can't confuse the two texts.
+
+Notifications (order status changes, back-in-stock alerts) are also texted — best-effort,
+only to users with a verified phone, through the same `SmsSender` (see **Notifications**
+below). New-product broadcasts stay database-only on purpose: they go to every verified
+customer, and turning that into an SMS blast would be spam (and burn Twilio trial credit).
 
 ---
 
@@ -105,7 +151,9 @@ All endpoints are under `/api` and return JSON. Protected routes require
 | --- | --- | --- | --- |
 | POST | `/auth/register` | – | Register with a phone number |
 | POST | `/auth/login` | – | Get a bearer token |
+| GET | `/auth/me` | ✔ | The authenticated user's own profile |
 | POST | `/auth/logout` | ✔ | Revoke the current token |
+| POST | `/auth/logout-all` | ✔ | Revoke every token for the user |
 | POST | `/auth/verify-phone/request` | – | Send/resend a verification code |
 | POST | `/auth/verify-phone` | – | Verify the phone number |
 | POST | `/auth/password/forgot` | – | Send a password reset code |
@@ -125,14 +173,14 @@ All endpoints are under `/api` and return JSON. Protected routes require
 | Method | Endpoint | Auth | Description |
 | --- | --- | --- | --- |
 | GET | `/orders` | ✔ | List orders (own for users, all for admin; status/user filters, sort) |
-| GET | `/orders/{id}` | owner/admin | Show an order |
+| GET | `/orders/{id}` | owner/admin | Show an order (404 for a non-owner, non-admin) |
 | POST | `/orders` | ✔ | Place an order (optional `Idempotency-Key` header) |
-| PATCH | `/orders/{id}/status` | admin | Change order status |
+| PATCH | `/orders/{id}/status` | admin | Change order status (cancelling restocks the items) |
 
 ### Notifications
 | Method | Endpoint | Auth | Description |
 | --- | --- | --- | --- |
-| GET | `/notifications` | ✔ | The user's own notifications |
+| GET | `/notifications` | ✔ | The user's own notifications (same `data`/`links`/`meta` pagination shape as products/orders) |
 | PATCH | `/notifications/{id}/read` | ✔ | Mark a notification as read |
 
 A full request/response contract — headers, bodies, and example success **and** error
@@ -146,6 +194,10 @@ set the `base_url`, `token`, and `admin_token` collection variables.
 
 > 📬 **Postman collection:** [`docs/postman_collection.json`](docs/postman_collection.json) — import it into
 > Postman to exercise every endpoint above (variables: `base_url`, `token`, `admin_token`).
+>
+> The diagrams below predate the `/auth/me`, `/auth/logout-all`, cancel-restocks-stock, and
+> SMS-notification additions — they still accurately describe registration, OTP, and order
+> placement, which are unchanged.
 
 ### Entity-relationship diagram
 All 9 domain tables and how they connect: `users` and `products` as the two hubs,
@@ -208,6 +260,10 @@ All listeners are `ShouldQueue` + `afterCommit`.
   - *Back in stock* — claims each subscription by deleting it *before* sending, so a retry
     or a concurrent worker finds the row gone and never notifies twice.
   - *Order status* — de-duplicates on the status-history id.
+- **Back-in-stock and order-status notifications also send an SMS** (`App\Notifications\Channels\SmsChannel`),
+  best-effort: a gateway failure is logged (`SMS notification delivery failed`) and does
+  **not** fail the queued job or the database notification that already succeeded. Only
+  sent to a user with a verified phone.
 
 ### Stock integrity & concurrency
 - Order creation runs in a single transaction that locks the product rows with
@@ -219,6 +275,9 @@ All listeners are `ShouldQueue` + `afterCommit`.
   prevents oversell in development/tests.
 - **Unit price is snapshotted** on each order item, so later product price edits never
   change an existing order's totals. Money is computed with bcmath.
+- **Cancelling an order restocks its items**, in the same transaction as the status change
+  and the same locked-row-order discipline as placing an order. Restocking a product from 0
+  correctly re-triggers `ProductObserver` → `ProductRestocked` → back-in-stock notifications.
 
 ### OTP security
 - Codes are 6 digits, generated with a CSPRNG, **stored only as a bcrypt hash**, single-use,
@@ -231,8 +290,9 @@ All listeners are `ShouldQueue` + `afterCommit`.
 
 ### Order status workflow
 - Allowed transitions: `pending → confirmed → processing → shipped → delivered`, with
-  `cancelled` reachable from any non-terminal state. `delivered` and `cancelled` are
-  terminal. Illegal transitions return `422`.
+  `cancelled` reachable from `pending`, `confirmed`, or `processing` — **not** from
+  `shipped`, since the package is already with a carrier by then. `delivered` and
+  `cancelled` are terminal. Illegal transitions return `422`.
 - **Resubmitting the current status is a no-op**: no history row, no event, no notification.
 - Every real change writes an immutable history row (`from`, `to`, `changed_by`,
   `created_at`) in the same transaction as the status update.
@@ -240,15 +300,16 @@ All listeners are `ShouldQueue` + `afterCommit`.
 ### Authorization
 - Sanctum protects every non-public route (`401` when unauthenticated).
 - `ProductPolicy` restricts writes to admins; `OrderPolicy` restricts an order to its owner
-  or an admin, and status changes to admins. Regular users get `403`, never a silent
-  success.
+  or an admin, and status changes to admins.
+- Viewing another user's order returns **404**, not 403 — the order's existence is not
+  confirmable by a non-owner. Attempting an admin-only *action* (e.g. a status change) as a
+  regular user still returns 403, since that failure isn't about hiding a resource's
+  existence.
 
 ### Assumptions
-- Cancelling an order does **not** restock its items (out of scope; would be a deliberate
-  business decision).
-- A user requesting another user's order receives `403` (the order exists but isn't theirs)
-  rather than `404`.
 - Admins are provisioned by seeding, not via a public endpoint.
+- `notify-me` (back-in-stock subscription) only accepts out-of-stock products; subscribing
+  to an in-stock product is a `422`.
 
 ---
 
@@ -256,16 +317,18 @@ All listeners are `ShouldQueue` + `afterCommit`.
 
 ```
 app/
-  Enums/            OrderStatus (transition map), OtpPurpose
+  Enums/            OrderStatus (transition map), OtpPurpose (SMS wording per purpose)
   Events/           ProductCreated, ProductRestocked, OrderStatusChanged
   Listeners/        queued notification fan-out (one per event)
   Observers/        ProductObserver (restock detection)
-  Notifications/    database notifications
+  Notifications/    database + SMS notifications
+    Channels/       SmsChannel (routes a notification's toSms() through SmsSender)
   Policies/         ProductPolicy, OrderPolicy
   Services/
-    Sms/            SmsSender contract + LogSmsSender (swappable gateway)
-    Otp/            OtpService (hashing, expiry, rate limiting)
-    Orders/         OrderService (atomic stock), OrderStatusService
-config/store.php    OTP, SMS-sender and admin-seed settings
+    Sms/            SmsSender contract + LogSmsSender/TwilioSmsSender (swappable gateway)
+    Otp/            OtpService (hashing, expiry, rate limiting, purpose-specific wording)
+    Orders/         OrderService (atomic stock), OrderStatusService (transitions, cancel-restock)
+database/seeders/   AdminUserSeeder, ProductSeeder
+config/store.php    OTP, SMS-sender/Twilio, and admin-seed settings
 docs/postman_collection.json
 ```

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Store API",
-    "description": "REST API for a small online store: phone auth, product management, notifications, and concurrency-safe orders.\n\nSet the collection variables `base_url`, `token` (a regular user's bearer token) and `admin_token` (the seeded admin's token) after logging in.\n\nNote: OTP codes are delivered via the SMS gateway. In development the gateway is `LogSmsSender`, so the code appears in `storage/logs/laravel.log`.",
+    "description": "REST API for a small online store: phone auth, product management, notifications, and concurrency-safe orders.\n\nSet the collection variables `base_url`, `token` (a regular user's bearer token) and `admin_token` (the seeded admin's token) after logging in.\n\nNote: OTP and notification SMS are delivered via the configured SMS gateway (`SMS_SENDER` in .env). By default (`log`) the message appears in `storage/logs/laravel.log`; set `SMS_SENDER=twilio` with TWILIO_* vars to send real SMS.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -192,6 +192,35 @@
           "response": []
         },
         {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/me", "host": ["{{base_url}}"], "path": ["api", "auth", "me"] }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/auth/me", "host": ["{{base_url}}"], "path": ["api", "auth", "me"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"user\": {\n    \"id\": 1,\n    \"name\": \"Saif Jamil\",\n    \"phone\": \"+201156683335\",\n    \"is_admin\": false,\n    \"phone_verified_at\": \"2026-07-20T13:05:00+00:00\",\n    \"created_at\": \"2026-07-20T13:00:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "401 Unauthenticated",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/auth/me", "host": ["{{base_url}}"], "path": ["api", "auth", "me"] } },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Unauthenticated.\"\n}"
+            }
+          ]
+        },
+        {
           "name": "Logout",
           "request": {
             "method": "POST",
@@ -213,6 +242,35 @@
             {
               "name": "401 Unauthenticated",
               "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/logout", "host": ["{{base_url}}"], "path": ["api", "auth", "logout"] } },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Unauthenticated.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Logout all devices",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/logout-all", "host": ["{{base_url}}"], "path": ["api", "auth", "logout-all"] }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/logout-all", "host": ["{{base_url}}"], "path": ["api", "auth", "logout-all"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Logged out of all devices.\"\n}"
+            },
+            {
+              "name": "401 Unauthenticated",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/logout-all", "host": ["{{base_url}}"], "path": ["api", "auth", "logout-all"] } },
               "status": "Unauthorized",
               "code": 401,
               "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -665,7 +723,7 @@
               "status": "OK",
               "code": 200,
               "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"current_page\": 1,\n  \"data\": [\n    {\n      \"id\": \"9b1c...\",\n      \"type\": \"App\\\\Notifications\\\\OrderStatusChangedNotification\",\n      \"data\": {\n        \"type\": \"order_status_changed\",\n        \"order_id\": 10,\n        \"history_id\": 1,\n        \"from_status\": \"pending\",\n        \"to_status\": \"confirmed\",\n        \"message\": \"Your order #10 is now confirmed.\"\n      },\n      \"read_at\": null,\n      \"created_at\": \"2026-07-20T13:45:00.000000Z\"\n    }\n  ],\n  \"per_page\": 15,\n  \"total\": 1\n}"
+              "body": "{\n  \"data\": [\n    {\n      \"id\": \"9b1c...\",\n      \"type\": \"App\\\\Notifications\\\\OrderStatusChangedNotification\",\n      \"data\": {\n        \"type\": \"order_status_changed\",\n        \"order_id\": 10,\n        \"history_id\": 1,\n        \"from_status\": \"pending\",\n        \"to_status\": \"confirmed\",\n        \"message\": \"Your order #10 is now confirmed.\"\n      },\n      \"read_at\": null,\n      \"created_at\": \"2026-07-20T13:45:00.000000Z\"\n    }\n  ],\n  \"links\": { \"first\": \"...\", \"last\": \"...\", \"prev\": null, \"next\": null },\n  \"meta\": { \"current_page\": 1, \"last_page\": 1, \"per_page\": 15, \"total\": 1 }\n}"
             }
           ]
         },
