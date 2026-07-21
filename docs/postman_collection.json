@@ -286,7 +286,7 @@
               { "key": "Authorization", "value": "Bearer {{token}}" }
             ],
             "url": {
-              "raw": "{{base_url}}/api/products?search=&min_price=&max_price=&in_stock=1&sort=created_at&direction=desc&per_page=15",
+              "raw": "{{base_url}}/api/products?search=&min_price=&max_price=&in_stock=1&sort=created_at&direction=desc&per_page=15&page=1",
               "host": ["{{base_url}}"],
               "path": ["api", "products"],
               "query": [
@@ -296,7 +296,8 @@
                 { "key": "in_stock", "value": "1", "description": "1 = only products with stock > 0" },
                 { "key": "sort", "value": "created_at", "description": "price | title | created_at" },
                 { "key": "direction", "value": "desc", "description": "asc | desc" },
-                { "key": "per_page", "value": "15", "description": "1-100" }
+                { "key": "per_page", "value": "15", "description": "1-100" },
+                { "key": "page", "value": "1", "description": "Page number, starts at 1" }
               ]
             }
           },
@@ -542,7 +543,7 @@
               { "key": "Authorization", "value": "Bearer {{token}}" }
             ],
             "url": {
-              "raw": "{{base_url}}/api/orders?status=&sort=created_at&direction=desc&per_page=15",
+              "raw": "{{base_url}}/api/orders?status=&sort=created_at&direction=desc&per_page=15&page=1",
               "host": ["{{base_url}}"],
               "path": ["api", "orders"],
               "query": [
@@ -550,7 +551,8 @@
                 { "key": "user_id", "value": "", "description": "Admin only", "disabled": true },
                 { "key": "sort", "value": "created_at", "description": "created_at | total" },
                 { "key": "direction", "value": "desc" },
-                { "key": "per_page", "value": "15" }
+                { "key": "per_page", "value": "15" },
+                { "key": "page", "value": "1", "description": "Page number, starts at 1" }
               ]
             }
           },
@@ -654,7 +656,7 @@
               { "key": "Accept", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{token}}" }
             ],
-            "url": { "raw": "{{base_url}}/api/notifications?per_page=15", "host": ["{{base_url}}"], "path": ["api", "notifications"], "query": [{ "key": "per_page", "value": "15" }] }
+            "url": { "raw": "{{base_url}}/api/notifications?per_page=15&page=1", "host": ["{{base_url}}"], "path": ["api", "notifications"], "query": [{ "key": "per_page", "value": "15" }, { "key": "page", "value": "1", "description": "Page number, starts at 1" }] }
           },
           "response": [
             {
