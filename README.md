@@ -147,6 +147,14 @@ set the `base_url`, `token`, and `admin_token` collection variables.
 > 📬 **Postman collection:** [`docs/postman_collection.json`](docs/postman_collection.json) — import it into
 > Postman to exercise every endpoint above (variables: `base_url`, `token`, `admin_token`).
 
+### Entity-relationship diagram
+All 9 domain tables and how they connect: `users` and `products` as the two hubs,
+`orders` as the central transaction, `order_items`/`stock_subscriptions` as the
+many-to-many join tables, `idempotency_keys`/`order_status_histories` hanging off
+`orders`, and `otp_codes` linked to `users` only by the `phone` value (no FK).
+
+![Entity-relationship diagram](docs/diagrams/erd.png)
+
 ### Use case diagram
 Customer and Admin actors against the Store API, including `«include»` relationships
 (registration/password-reset both include *Send OTP*; *Place Order* includes the atomic
