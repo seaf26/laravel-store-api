@@ -135,6 +135,15 @@ class OrderStatusTest extends TestCase
         $this->assertDatabaseCount('order_status_histories', 0);
     }
 
+    public function test_changing_the_status_of_an_unknown_order_returns_404(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->patchJson('/api/orders/999999/status', ['status' => 'confirmed'])
+            ->assertNotFound();
+    }
+
     public function test_retrying_the_listener_does_not_send_a_duplicate_notification(): void
     {
         $owner = User::factory()->create();

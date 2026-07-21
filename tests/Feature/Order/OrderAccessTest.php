@@ -79,4 +79,20 @@ class OrderAccessTest extends TestCase
     {
         $this->getJson('/api/orders')->assertUnauthorized();
     }
+
+    public function test_viewing_an_unknown_order_returns_404(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->getJson('/api/orders/999999')
+            ->assertNotFound();
+    }
+
+    public function test_an_admin_viewing_an_unknown_order_also_returns_404(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)->getJson('/api/orders/999999')
+            ->assertNotFound();
+    }
 }
