@@ -4,9 +4,11 @@ namespace App\Services\Orders;
 
 use App\Enums\OrderStatus;
 use App\Exceptions\InsufficientStockException;
+use App\Models\IdempotencyKey;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 class OrderService
@@ -18,12 +20,27 @@ class OrderService
      * locked for update. Either every requested quantity is available and the
      * order is created with stock decremented, or nothing changes at all.
      *
+     * When an idempotency key is supplied, submitting the same request twice
+     * returns the original order without creating a second one or decrementing
+     * stock again.
+     *
      * @param  array<int, array{product_id: int, quantity: int}>  $items
      *
      * @throws InsufficientStockException
      */
-    public function place(User $user, array $items): Order
+    public function place(User $user, array $items, ?string $idempotencyKey = null): OrderPlacementResult
     {
+        // Fast path: the key was already used, so replay the original order.
+        if ($idempotencyKey !== null) {
+            $existing = IdempotencyKey::where('user_id', $user->id)
+                ->where('key', $idempotencyKey)
+                ->first();
+
+            if ($existing) {
+                return new OrderPlacementResult($existing->order->load('items.product'), replayed: true);
+            }
+        }
+
         // Combine duplicate product lines into a single required quantity.
         $required = [];
         foreach ($items as $item) {
@@ -31,52 +48,79 @@ class OrderService
             $required[$id] = ($required[$id] ?? 0) + (int) $item['quantity'];
         }
 
-        return DB::transaction(function () use ($user, $required) {
-            // Lock the product rows in a stable id order. Ordering the locks
-            // consistently means two concurrent orders acquire them in the same
-            // sequence and cannot deadlock; the lock serialises the read-check-
-            // decrement so stock can never be oversold.
-            $products = Product::query()
-                ->whereIn('id', array_keys($required))
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->get()
-                ->keyBy('id');
+        try {
+            $order = DB::transaction(function () use ($user, $required, $idempotencyKey) {
+                // Lock the product rows in a stable id order. Ordering the locks
+                // consistently means two concurrent orders acquire them in the
+                // same sequence and cannot deadlock; the lock serialises the
+                // read-check-decrement so stock can never be oversold.
+                $products = Product::query()
+                    ->whereIn('id', array_keys($required))
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id');
 
-            $errors = $this->collectStockErrors($required, $products);
+                $errors = $this->collectStockErrors($required, $products);
 
-            if ($errors !== []) {
-                // Throwing here rolls the transaction back: no order, no items,
-                // no stock change.
-                throw new InsufficientStockException($errors);
-            }
+                if ($errors !== []) {
+                    // Throwing here rolls the transaction back: no order, no
+                    // items, no stock change.
+                    throw new InsufficientStockException($errors);
+                }
 
-            $order = $user->orders()->create([
-                'status' => OrderStatus::Pending,
-                'total' => 0,
-            ]);
-
-            $total = '0.00';
-
-            foreach ($required as $productId => $quantity) {
-                $product = $products->get($productId);
-
-                $product->decrement('stock', $quantity);
-
-                $order->items()->create([
-                    'product_id' => $product->id,
-                    'quantity' => $quantity,
-                    'unit_price' => $product->price,
+                $order = $user->orders()->create([
+                    'status' => OrderStatus::Pending,
+                    'total' => 0,
                 ]);
 
-                // Money is accumulated with bcmath to avoid float rounding.
-                $total = bcadd($total, bcmul((string) $product->price, (string) $quantity, 2), 2);
-            }
+                // Claim the idempotency key before touching stock. If a
+                // concurrent request already claimed it, the unique constraint
+                // fails and we roll back this order rather than double-charging
+                // stock.
+                if ($idempotencyKey !== null) {
+                    try {
+                        IdempotencyKey::create([
+                            'user_id' => $user->id,
+                            'key' => $idempotencyKey,
+                            'order_id' => $order->id,
+                        ]);
+                    } catch (QueryException $e) {
+                        throw new DuplicateOrderException(previous: $e);
+                    }
+                }
 
-            $order->update(['total' => $total]);
+                $total = '0.00';
 
-            return $order->load('items.product');
-        });
+                foreach ($required as $productId => $quantity) {
+                    $product = $products->get($productId);
+
+                    $product->decrement('stock', $quantity);
+
+                    $order->items()->create([
+                        'product_id' => $product->id,
+                        'quantity' => $quantity,
+                        'unit_price' => $product->price,
+                    ]);
+
+                    // Money is accumulated with bcmath to avoid float rounding.
+                    $total = bcadd($total, bcmul((string) $product->price, (string) $quantity, 2), 2);
+                }
+
+                $order->update(['total' => $total]);
+
+                return $order->load('items.product');
+            });
+        } catch (DuplicateOrderException) {
+            // The concurrent winner committed; return its order.
+            $existing = IdempotencyKey::where('user_id', $user->id)
+                ->where('key', $idempotencyKey)
+                ->firstOrFail();
+
+            return new OrderPlacementResult($existing->order->load('items.product'), replayed: true);
+        }
+
+        return new OrderPlacementResult($order, replayed: false);
     }
 
     /**
