@@ -44,8 +44,9 @@ class OtpService
         ]);
 
         $this->sms->send($phone, sprintf(
-            'Your %s verification code is %s. It expires in %d minutes.',
+            'Your %s %s code is %s. It expires in %d minutes.',
             config('app.name'),
+            $purpose->smsLabel(),
             $code,
             $this->ttlMinutes(),
         ));
