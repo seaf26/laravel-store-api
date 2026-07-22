@@ -74,4 +74,34 @@ class ProductListingTest extends TestCase
         $this->assertCount(2, $response->json('data'));
         $this->assertSame(3, $response->json('meta.last_page'));
     }
+
+    public function test_invalid_product_listing_values_are_rejected_instead_of_cast_or_clamped(): void
+    {
+        $user = User::factory()->create();
+        $cases = [
+            ['search[]=shoe', 'search'],
+            ['min_price=-1', 'min_price'],
+            ['max_price=not-a-number', 'max_price'],
+            ['in_stock=maybe', 'in_stock'],
+            ['direction=sideways', 'direction'],
+            ['per_page=0', 'per_page'],
+            ['per_page=101', 'per_page'],
+            ['page=0', 'page'],
+        ];
+
+        foreach ($cases as [$query, $field]) {
+            $this->actingAs($user)
+                ->getJson("/api/products?{$query}")
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors($field);
+        }
+    }
+
+    public function test_an_inverted_product_price_range_is_rejected(): void
+    {
+        $this->actingAs(User::factory()->create())
+            ->getJson('/api/products?min_price=100&max_price=50')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('max_price');
+    }
 }

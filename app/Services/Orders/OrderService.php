@@ -3,16 +3,20 @@
 namespace App\Services\Orders;
 
 use App\Enums\OrderStatus;
+use App\Exceptions\IdempotencyConflictException;
 use App\Exceptions\InsufficientStockException;
 use App\Models\IdempotencyKey;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class OrderService
 {
+    public function __construct(private readonly OrderRequestFingerprint $fingerprint) {}
+
     /**
      * Place an order atomically.
      *
@@ -26,10 +30,13 @@ class OrderService
      *
      * @param  array<int, array{product_id: int, quantity: int}>  $items
      *
+     * @throws IdempotencyConflictException
      * @throws InsufficientStockException
      */
     public function place(User $user, array $items, ?string $idempotencyKey = null): OrderPlacementResult
     {
+        $requestHash = $this->fingerprint->hash($items);
+
         // Fast path: the key was already used, so replay the original order.
         if ($idempotencyKey !== null) {
             $existing = IdempotencyKey::where('user_id', $user->id)
@@ -37,7 +44,7 @@ class OrderService
                 ->first();
 
             if ($existing) {
-                return new OrderPlacementResult($existing->order->load('items.product'), replayed: true);
+                return $this->replay($existing, $requestHash);
             }
         }
 
@@ -49,7 +56,7 @@ class OrderService
         }
 
         try {
-            $order = DB::transaction(function () use ($user, $required, $idempotencyKey) {
+            $order = DB::transaction(function () use ($user, $required, $idempotencyKey, $requestHash) {
                 // Lock the product rows in a stable id order. Ordering the locks
                 // consistently means two concurrent orders acquire them in the
                 // same sequence and cannot deadlock; the lock serialises the
@@ -83,6 +90,7 @@ class OrderService
                         IdempotencyKey::create([
                             'user_id' => $user->id,
                             'key' => $idempotencyKey,
+                            'request_hash' => $requestHash,
                             'order_id' => $order->id,
                         ]);
                     } catch (QueryException $e) {
@@ -117,10 +125,22 @@ class OrderService
                 ->where('key', $idempotencyKey)
                 ->firstOrFail();
 
-            return new OrderPlacementResult($existing->order->load('items.product'), replayed: true);
+            return $this->replay($existing, $requestHash);
         }
 
         return new OrderPlacementResult($order, replayed: false);
+    }
+
+    /**
+     * @throws IdempotencyConflictException
+     */
+    private function replay(IdempotencyKey $existing, string $requestHash): OrderPlacementResult
+    {
+        if (! is_string($existing->request_hash) || ! hash_equals($existing->request_hash, $requestHash)) {
+            throw new IdempotencyConflictException;
+        }
+
+        return new OrderPlacementResult($existing->order->load('items.product'), replayed: true);
     }
 
     /**
@@ -128,7 +148,7 @@ class OrderService
      * requested quantity. The line index matches the original request order.
      *
      * @param  array<int, int>  $required
-     * @param  \Illuminate\Support\Collection<int, Product>  $products
+     * @param  Collection<int, Product>  $products
      * @return array<string, array<int, string>>
      */
     private function collectStockErrors(array $required, $products): array

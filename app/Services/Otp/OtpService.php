@@ -6,6 +6,9 @@ use App\Enums\OtpPurpose;
 use App\Exceptions\TooManyOtpRequestsException;
 use App\Models\OtpCode;
 use App\Services\Sms\SmsSender;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class OtpService
@@ -22,30 +25,40 @@ class OtpService
      */
     public function issue(string $phone, OtpPurpose $purpose): void
     {
-        $this->assertWithinRateLimit($phone, $purpose);
+        try {
+            $code = Cache::lock($this->issueLockKey($phone, $purpose), 5)
+                ->block(1, fn () => DB::transaction(function () use ($phone, $purpose): string {
+                    $this->assertWithinRateLimit($phone, $purpose);
 
-        // Any previously issued, still-unused code is invalidated so only the
-        // most recent code can ever be redeemed. The rows are marked consumed
-        // rather than deleted, because the rate limiter counts issued codes
-        // within the window and deleting them would defeat it.
-        OtpCode::query()
-            ->where('phone', $phone)
-            ->where('purpose', $purpose)
-            ->whereNull('consumed_at')
-            ->update(['consumed_at' => now()]);
+                    // Mark older codes consumed rather than deleting them, so
+                    // they continue to count against the issue window.
+                    OtpCode::query()
+                        ->where('phone', $phone)
+                        ->where('purpose', $purpose)
+                        ->whereNull('consumed_at')
+                        ->update(['consumed_at' => now()]);
 
-        $code = $this->generateCode();
+                    $code = $this->generateCode();
 
-        OtpCode::create([
-            'phone' => $phone,
-            'code_hash' => Hash::make($code),
-            'purpose' => $purpose,
-            'expires_at' => now()->addMinutes($this->ttlMinutes()),
-        ]);
+                    OtpCode::create([
+                        'phone' => $phone,
+                        'code_hash' => Hash::make($code),
+                        'purpose' => $purpose,
+                        'expires_at' => now()->addMinutes($this->ttlMinutes()),
+                    ]);
 
+                    return $code;
+                }, 3));
+        } catch (LockTimeoutException) {
+            throw new TooManyOtpRequestsException;
+        }
+
+        // The database commit and distributed lock release both happen before
+        // the external delivery side effect.
         $this->sms->send($phone, sprintf(
-            'Your %s verification code is %s. It expires in %d minutes.',
+            'Your %s %s code is %s. It expires in %d minutes.',
             config('app.name'),
+            $purpose->smsLabel(),
             $code,
             $this->ttlMinutes(),
         ));
@@ -56,23 +69,25 @@ class OtpService
      */
     public function verify(string $phone, OtpPurpose $purpose, string $code): bool
     {
-        $candidates = OtpCode::query()
+        $candidate = OtpCode::query()
             ->where('phone', $phone)
             ->where('purpose', $purpose)
             ->whereNull('consumed_at')
             ->where('expires_at', '>', now())
             ->latest('id')
-            ->get();
+            ->first();
 
-        foreach ($candidates as $candidate) {
-            if (Hash::check($code, $candidate->code_hash)) {
-                $candidate->forceFill(['consumed_at' => now()])->save();
-
-                return true;
-            }
+        if (! $candidate || ! Hash::check($code, $candidate->code_hash)) {
+            return false;
         }
 
-        return false;
+        $claimedAt = now();
+
+        return OtpCode::query()
+            ->whereKey($candidate->getKey())
+            ->whereNull('consumed_at')
+            ->where('expires_at', '>', $claimedAt)
+            ->update(['consumed_at' => $claimedAt]) === 1;
     }
 
     /**
@@ -107,5 +122,16 @@ class OtpService
     private function ttlMinutes(): int
     {
         return (int) config('store.otp.ttl_minutes');
+    }
+
+    private function issueLockKey(string $phone, OtpPurpose $purpose): string
+    {
+        $digest = hash_hmac(
+            'sha256',
+            $purpose->value.'|'.$phone,
+            (string) config('app.key'),
+        );
+
+        return 'otp-issue:'.$digest;
     }
 }

@@ -1,0 +1,793 @@
+{
+  "info": {
+    "name": "Store API",
+    "description": "REST API for a small online store: phone auth, product management, notifications, and concurrency-safe orders.\n\nSet the collection variables `base_url`, `token` (a regular user's bearer token) and `admin_token` (the seeded admin's token) after logging in.\n\nNote: OTP and notification SMS are delivered via the configured SMS gateway (`SMS_SENDER` in .env). By default (`log`) the message appears in `storage/logs/laravel.log`; set `SMS_SENDER=twilio` with TWILIO_* vars to send real SMS.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "token", "value": "" },
+    { "key": "admin_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api", "auth", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Saif Jamil\",\n  \"phone\": \"+201156683335\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}"
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{ "key": "Accept", "value": "application/json" }],
+                "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api", "auth", "register"] },
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"Saif Jamil\",\n  \"phone\": \"+201156683335\",\n  \"password\": \"password123\",\n  \"password_confirmation\": \"password123\"\n}" }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Account created. A verification code has been sent to your phone.\",\n  \"user\": {\n    \"id\": 1,\n    \"name\": \"Saif Jamil\",\n    \"phone\": \"+201156683335\",\n    \"is_admin\": false,\n    \"phone_verified_at\": null,\n    \"created_at\": \"2026-07-20T13:00:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "422 Validation error",
+              "originalRequest": {
+                "method": "POST",
+                "header": [{ "key": "Accept", "value": "application/json" }],
+                "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api", "auth", "register"] },
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"Saif Jamil\",\n  \"phone\": \"not-a-phone\",\n  \"password\": \"short\"\n}" }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"The phone field format is invalid. (and 1 more error)\",\n  \"errors\": {\n    \"phone\": [\"The phone field format is invalid.\"],\n    \"password\": [\"The password field confirmation does not match.\"]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Verify phone - request code",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/verify-phone/request", "host": ["{{base_url}}"], "path": ["api", "auth", "verify-phone", "request"] },
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\"\n}" }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/verify-phone/request", "host": ["{{base_url}}"], "path": ["api", "auth", "verify-phone", "request"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"If the phone number requires verification, a code has been sent.\"\n}"
+            },
+            {
+              "name": "429 Too many requests",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Accept", "value": "application/json" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": { "raw": "{{base_url}}/api/auth/verify-phone/request", "host": ["{{base_url}}"], "path": ["api", "auth", "verify-phone", "request"] },
+                "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\"\n}" }
+              },
+              "status": "Too Many Requests",
+              "code": 429,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" },
+                { "key": "Retry-After", "value": "600" },
+                { "key": "X-RateLimit-Limit", "value": "3" },
+                { "key": "X-RateLimit-Remaining", "value": "0" }
+              ],
+              "body": "{\n  \"message\": \"Too many attempts. Please try again later.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Verify phone - confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/verify-phone", "host": ["{{base_url}}"], "path": ["api", "auth", "verify-phone"] },
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\",\n  \"code\": \"123456\"\n}" }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/verify-phone", "host": ["{{base_url}}"], "path": ["api", "auth", "verify-phone"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Phone number verified.\"\n}"
+            },
+            {
+              "name": "422 Invalid code",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/verify-phone", "host": ["{{base_url}}"], "path": ["api", "auth", "verify-phone"] } },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Invalid or expired code.\",\n  \"errors\": {\n    \"code\": [\"Invalid or expired code.\"]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) { pm.collectionVariables.set('token', res.token); }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\",\n  \"password\": \"password123\"\n}" }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"token\": \"1|abcdefghijklmnopqrstuvwxyz\",\n  \"user\": {\n    \"id\": 1,\n    \"name\": \"Saif Jamil\",\n    \"phone\": \"+201156683335\",\n    \"is_admin\": false,\n    \"phone_verified_at\": \"2026-07-20T13:05:00+00:00\",\n    \"created_at\": \"2026-07-20T13:00:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "422 Wrong credentials",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] } },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"The provided credentials are incorrect.\",\n  \"errors\": {\n    \"phone\": [\"The provided credentials are incorrect.\"]\n  }\n}"
+            },
+            {
+              "name": "403 Phone not verified",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] } },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Phone number is not verified.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Login (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) { pm.collectionVariables.set('admin_token', res.token); }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api", "auth", "login"] },
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+10000000001\",\n  \"password\": \"password\"\n}" }
+          },
+          "response": []
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/me", "host": ["{{base_url}}"], "path": ["api", "auth", "me"] }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/auth/me", "host": ["{{base_url}}"], "path": ["api", "auth", "me"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"user\": {\n    \"id\": 1,\n    \"name\": \"Saif Jamil\",\n    \"phone\": \"+201156683335\",\n    \"is_admin\": false,\n    \"phone_verified_at\": \"2026-07-20T13:05:00+00:00\",\n    \"created_at\": \"2026-07-20T13:00:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "401 Unauthenticated",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/auth/me", "host": ["{{base_url}}"], "path": ["api", "auth", "me"] } },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Unauthenticated.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/logout", "host": ["{{base_url}}"], "path": ["api", "auth", "logout"] }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/logout", "host": ["{{base_url}}"], "path": ["api", "auth", "logout"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Logged out.\"\n}"
+            },
+            {
+              "name": "401 Unauthenticated",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/logout", "host": ["{{base_url}}"], "path": ["api", "auth", "logout"] } },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Unauthenticated.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Logout all devices",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/logout-all", "host": ["{{base_url}}"], "path": ["api", "auth", "logout-all"] }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/logout-all", "host": ["{{base_url}}"], "path": ["api", "auth", "logout-all"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Logged out of all devices.\"\n}"
+            },
+            {
+              "name": "401 Unauthenticated",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/logout-all", "host": ["{{base_url}}"], "path": ["api", "auth", "logout-all"] } },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Unauthenticated.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/password/forgot", "host": ["{{base_url}}"], "path": ["api", "auth", "password", "forgot"] },
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\"\n}" }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/password/forgot", "host": ["{{base_url}}"], "path": ["api", "auth", "password", "forgot"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"If the phone number is registered, a reset code has been sent.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/auth/password/reset", "host": ["{{base_url}}"], "path": ["api", "auth", "password", "reset"] },
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+201156683335\",\n  \"code\": \"123456\",\n  \"password\": \"new-password123\",\n  \"password_confirmation\": \"new-password123\"\n}" }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/password/reset", "host": ["{{base_url}}"], "path": ["api", "auth", "password", "reset"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Password has been reset.\"\n}"
+            },
+            {
+              "name": "422 Invalid code",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/auth/password/reset", "host": ["{{base_url}}"], "path": ["api", "auth", "password", "reset"] } },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Invalid or expired code.\",\n  \"errors\": {\n    \"code\": [\"Invalid or expired code.\"]\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "List products",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/products?search=&min_price=&max_price=&in_stock=1&sort=created_at&direction=desc&per_page=15&page=1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products"],
+              "query": [
+                { "key": "search", "value": "", "description": "Match title or description" },
+                { "key": "min_price", "value": "" },
+                { "key": "max_price", "value": "" },
+                { "key": "in_stock", "value": "1", "description": "1 = only products with stock > 0" },
+                { "key": "sort", "value": "created_at", "description": "price | title | created_at" },
+                { "key": "direction", "value": "desc", "description": "asc | desc" },
+                { "key": "per_page", "value": "15", "description": "1-100" },
+                { "key": "page", "value": "1", "description": "Page number, starts at 1" }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/products", "host": ["{{base_url}}"], "path": ["api", "products"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 1,\n      \"title\": \"Running Shoe\",\n      \"price\": \"49.99\",\n      \"description\": \"Lightweight running shoe.\",\n      \"stock\": 25,\n      \"in_stock\": true,\n      \"image_url\": \"http://localhost:8000/storage/products/abc123.jpg\",\n      \"created_at\": \"2026-07-20T13:10:00+00:00\",\n      \"updated_at\": \"2026-07-20T13:10:00+00:00\"\n    }\n  ],\n  \"links\": { \"first\": \"...\", \"last\": \"...\", \"prev\": null, \"next\": null },\n  \"meta\": { \"current_page\": 1, \"last_page\": 1, \"per_page\": 15, \"total\": 1 }\n}"
+            },
+            {
+              "name": "401 Unauthenticated",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/products", "host": ["{{base_url}}"], "path": ["api", "products"] } },
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Unauthenticated.\"\n}"
+            },
+            {
+              "name": "422 Invalid sort",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/products?sort=unknown", "host": ["{{base_url}}"], "path": ["api", "products"], "query": [{ "key": "sort", "value": "unknown" }] } },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"The selected sort is invalid.\",\n  \"errors\": {\n    \"sort\": [\"The selected sort is invalid.\"]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Show product",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/products/1", "host": ["{{base_url}}"], "path": ["api", "products", "1"] }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/products/1", "host": ["{{base_url}}"], "path": ["api", "products", "1"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"data\": {\n    \"id\": 1,\n    \"title\": \"Running Shoe\",\n    \"price\": \"49.99\",\n    \"description\": \"Lightweight running shoe.\",\n    \"stock\": 25,\n    \"in_stock\": true,\n    \"image_url\": \"http://localhost:8000/storage/products/abc123.jpg\",\n    \"created_at\": \"2026-07-20T13:10:00+00:00\",\n    \"updated_at\": \"2026-07-20T13:10:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "404 Not found",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/products/999", "host": ["{{base_url}}"], "path": ["api", "products", "999"] } },
+              "status": "Not Found",
+              "code": 404,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"No query results for model [App\\\\Models\\\\Product] 999\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create product (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/products", "host": ["{{base_url}}"], "path": ["api", "products"] },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "title", "value": "Running Shoe", "type": "text" },
+                { "key": "price", "value": "49.99", "type": "text" },
+                { "key": "description", "value": "Lightweight running shoe.", "type": "text" },
+                { "key": "stock", "value": "25", "type": "text" },
+                { "key": "image", "type": "file", "src": [] }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/products", "host": ["{{base_url}}"], "path": ["api", "products"] } },
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"data\": {\n    \"id\": 2,\n    \"title\": \"Running Shoe\",\n    \"price\": \"49.99\",\n    \"description\": \"Lightweight running shoe.\",\n    \"stock\": 25,\n    \"in_stock\": true,\n    \"image_url\": \"http://localhost:8000/storage/products/xyz789.jpg\",\n    \"created_at\": \"2026-07-20T13:20:00+00:00\",\n    \"updated_at\": \"2026-07-20T13:20:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "403 Forbidden (not admin)",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/products", "host": ["{{base_url}}"], "path": ["api", "products"] } },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"This action is unauthorized.\"\n}"
+            },
+            {
+              "name": "422 Validation error",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/products", "host": ["{{base_url}}"], "path": ["api", "products"] } },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"The title field is required. (and 2 more errors)\",\n  \"errors\": {\n    \"title\": [\"The title field is required.\"],\n    \"price\": [\"The price field must be at least 0.\"],\n    \"image\": [\"The image field must be an image.\"]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update product (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/products/2", "host": ["{{base_url}}"], "path": ["api", "products", "2"] },
+            "body": { "mode": "raw", "raw": "{\n  \"price\": 59.99,\n  \"stock\": 40\n}" },
+            "description": "To replace the image, send as multipart/form-data with an `image` file part instead of JSON."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/products/2", "host": ["{{base_url}}"], "path": ["api", "products", "2"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"data\": {\n    \"id\": 2,\n    \"title\": \"Running Shoe\",\n    \"price\": \"59.99\",\n    \"description\": \"Lightweight running shoe.\",\n    \"stock\": 40,\n    \"in_stock\": true,\n    \"image_url\": \"http://localhost:8000/storage/products/xyz789.jpg\",\n    \"created_at\": \"2026-07-20T13:20:00+00:00\",\n    \"updated_at\": \"2026-07-20T13:25:00+00:00\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delete product (admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/products/2", "host": ["{{base_url}}"], "path": ["api", "products", "2"] }
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/products/2", "host": ["{{base_url}}"], "path": ["api", "products", "2"] } },
+              "status": "No Content",
+              "code": 204,
+              "header": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "name": "Notify me (back in stock)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/products/1/notify-me", "host": ["{{base_url}}"], "path": ["api", "products", "1", "notify-me"] }
+          },
+          "response": [
+            {
+              "name": "201 Subscribed",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/products/1/notify-me", "host": ["{{base_url}}"], "path": ["api", "products", "1", "notify-me"] } },
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"You will be notified when this product is back in stock.\",\n  \"data\": {\n    \"product_id\": 1,\n    \"subscribed_at\": \"2026-07-20T13:30:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "422 Product in stock",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/products/1/notify-me", "host": ["{{base_url}}"], "path": ["api", "products", "1", "notify-me"] } },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Product is in stock.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Place order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "order-2026-07-20-0001", "description": "Optional, maximum 64 characters. The same normalized items replay the original order; different items return 409." }
+            ],
+            "url": { "raw": "{{base_url}}/api/orders", "host": ["{{base_url}}"], "path": ["api", "orders"] },
+            "body": { "mode": "raw", "raw": "{\n  \"items\": [\n    { \"product_id\": 1, \"quantity\": 2 },\n    { \"product_id\": 3, \"quantity\": 1 }\n  ]\n}" }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/orders", "host": ["{{base_url}}"], "path": ["api", "orders"] } },
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"data\": {\n    \"id\": 10,\n    \"user_id\": 1,\n    \"status\": \"pending\",\n    \"total\": \"102.48\",\n    \"items\": [\n      { \"product_id\": 1, \"title\": \"Running Shoe\", \"quantity\": 2, \"unit_price\": \"49.99\", \"line_total\": \"99.98\" },\n      { \"product_id\": 3, \"title\": \"Cap\", \"quantity\": 1, \"unit_price\": \"2.50\", \"line_total\": \"2.50\" }\n    ],\n    \"created_at\": \"2026-07-20T13:40:00+00:00\",\n    \"updated_at\": \"2026-07-20T13:40:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "200 Replayed (idempotent)",
+              "originalRequest": { "method": "POST", "header": [{ "key": "Idempotency-Key", "value": "order-2026-07-20-0001" }], "url": { "raw": "{{base_url}}/api/orders", "host": ["{{base_url}}"], "path": ["api", "orders"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" },
+                { "key": "Idempotency-Replayed", "value": "true" }
+              ],
+              "body": "{\n  \"data\": {\n    \"id\": 10,\n    \"user_id\": 1,\n    \"status\": \"pending\",\n    \"total\": \"102.48\",\n    \"items\": [\n      { \"product_id\": 1, \"title\": \"Running Shoe\", \"quantity\": 2, \"unit_price\": \"49.99\", \"line_total\": \"99.98\" }\n    ],\n    \"created_at\": \"2026-07-20T13:40:00+00:00\",\n    \"updated_at\": \"2026-07-20T13:40:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "409 Idempotency conflict",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Accept", "value": "application/json" },
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" },
+                  { "key": "Idempotency-Key", "value": "order-2026-07-20-0001" }
+                ],
+                "url": { "raw": "{{base_url}}/api/orders", "host": ["{{base_url}}"], "path": ["api", "orders"] },
+                "body": { "mode": "raw", "raw": "{\n  \"items\": [\n    { \"product_id\": 1, \"quantity\": 1 }\n  ]\n}" }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"The idempotency key was already used with a different request.\"\n}"
+            },
+            {
+              "name": "422 Insufficient stock",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/orders", "host": ["{{base_url}}"], "path": ["api", "orders"] } },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Insufficient stock.\",\n  \"errors\": {\n    \"items.1\": [\"Only 1 left for 'Cap'.\"]\n  }\n}"
+            },
+            {
+              "name": "422 Validation error",
+              "originalRequest": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/orders", "host": ["{{base_url}}"], "path": ["api", "orders"] } },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"The items field is required.\",\n  \"errors\": {\n    \"items\": [\"The items field is required.\"]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "List orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders?status=&sort=created_at&direction=desc&per_page=15&page=1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders"],
+              "query": [
+                { "key": "status", "value": "", "description": "pending|confirmed|processing|shipped|delivered|cancelled" },
+                { "key": "user_id", "value": "", "description": "Admin only", "disabled": true },
+                { "key": "sort", "value": "created_at", "description": "created_at | total" },
+                { "key": "direction", "value": "desc", "description": "asc | desc" },
+                { "key": "per_page", "value": "15", "description": "1-100" },
+                { "key": "page", "value": "1", "description": "Page number, starts at 1" }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/orders", "host": ["{{base_url}}"], "path": ["api", "orders"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 10,\n      \"user_id\": 1,\n      \"status\": \"pending\",\n      \"total\": \"102.48\",\n      \"items\": [\n        { \"product_id\": 1, \"title\": \"Running Shoe\", \"quantity\": 2, \"unit_price\": \"49.99\", \"line_total\": \"99.98\" }\n      ],\n      \"created_at\": \"2026-07-20T13:40:00+00:00\",\n      \"updated_at\": \"2026-07-20T13:40:00+00:00\"\n    }\n  ],\n  \"links\": { \"first\": \"...\", \"last\": \"...\", \"prev\": null, \"next\": null },\n  \"meta\": { \"current_page\": 1, \"last_page\": 1, \"per_page\": 15, \"total\": 1 }\n}"
+            },
+            {
+              "name": "422 Invalid status",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/orders?status=unknown", "host": ["{{base_url}}"], "path": ["api", "orders"], "query": [{ "key": "status", "value": "unknown" }] } },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"The selected status is invalid.\",\n  \"errors\": {\n    \"status\": [\"The selected status is invalid.\"]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Show order",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/orders/10", "host": ["{{base_url}}"], "path": ["api", "orders", "10"] }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/orders/10", "host": ["{{base_url}}"], "path": ["api", "orders", "10"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"data\": {\n    \"id\": 10,\n    \"user_id\": 1,\n    \"status\": \"pending\",\n    \"total\": \"102.48\",\n    \"items\": [\n      { \"product_id\": 1, \"title\": \"Running Shoe\", \"quantity\": 2, \"unit_price\": \"49.99\", \"line_total\": \"99.98\" }\n    ],\n    \"created_at\": \"2026-07-20T13:40:00+00:00\",\n    \"updated_at\": \"2026-07-20T13:40:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "403 Not your order",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/orders/11", "host": ["{{base_url}}"], "path": ["api", "orders", "11"] } },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"This action is unauthorized.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update order status (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/orders/10/status", "host": ["{{base_url}}"], "path": ["api", "orders", "10", "status"] },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"confirmed\"\n}" }
+          },
+          "response": [
+            {
+              "name": "200 Updated",
+              "originalRequest": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/orders/10/status", "host": ["{{base_url}}"], "path": ["api", "orders", "10", "status"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Order status updated.\",\n  \"data\": {\n    \"id\": 10,\n    \"user_id\": 1,\n    \"status\": \"confirmed\",\n    \"total\": \"102.48\",\n    \"items\": [],\n    \"created_at\": \"2026-07-20T13:40:00+00:00\",\n    \"updated_at\": \"2026-07-20T13:45:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "200 Status unchanged (no-op)",
+              "originalRequest": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/orders/10/status", "host": ["{{base_url}}"], "path": ["api", "orders", "10", "status"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Status unchanged.\",\n  \"data\": {\n    \"id\": 10,\n    \"user_id\": 1,\n    \"status\": \"confirmed\",\n    \"total\": \"102.48\",\n    \"items\": [],\n    \"created_at\": \"2026-07-20T13:40:00+00:00\",\n    \"updated_at\": \"2026-07-20T13:45:00+00:00\"\n  }\n}"
+            },
+            {
+              "name": "422 Invalid transition",
+              "originalRequest": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/orders/10/status", "host": ["{{base_url}}"], "path": ["api", "orders", "10", "status"] } },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Cannot change status from pending to shipped.\"\n}"
+            },
+            {
+              "name": "403 Not admin",
+              "originalRequest": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/orders/10/status", "host": ["{{base_url}}"], "path": ["api", "orders", "10", "status"] } },
+              "status": "Forbidden",
+              "code": 403,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"This action is unauthorized.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List my notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/notifications?per_page=15&page=1", "host": ["{{base_url}}"], "path": ["api", "notifications"], "query": [{ "key": "per_page", "value": "15" }, { "key": "page", "value": "1", "description": "Page number, starts at 1" }] }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/notifications", "host": ["{{base_url}}"], "path": ["api", "notifications"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": \"9b1c...\",\n      \"type\": \"App\\\\Notifications\\\\OrderStatusChangedNotification\",\n      \"data\": {\n        \"type\": \"order_status_changed\",\n        \"order_id\": 10,\n        \"history_id\": 1,\n        \"from_status\": \"pending\",\n        \"to_status\": \"confirmed\",\n        \"message\": \"Your order #10 is now confirmed.\"\n      },\n      \"read_at\": null,\n      \"created_at\": \"2026-07-20T13:45:00.000000Z\"\n    }\n  ],\n  \"links\": { \"first\": \"...\", \"last\": \"...\", \"prev\": null, \"next\": null },\n  \"meta\": { \"current_page\": 1, \"last_page\": 1, \"per_page\": 15, \"total\": 1 }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Mark notification as read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/notifications/9b1c0000-0000-0000-0000-000000000000/read", "host": ["{{base_url}}"], "path": ["api", "notifications", "9b1c0000-0000-0000-0000-000000000000", "read"] }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/notifications/{id}/read", "host": ["{{base_url}}"], "path": ["api", "notifications", "{id}", "read"] } },
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"Notification marked as read.\"\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

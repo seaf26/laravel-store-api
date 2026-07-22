@@ -64,4 +64,37 @@ class OrderListingTest extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors('sort');
     }
+
+    public function test_invalid_order_listing_values_are_rejected_instead_of_cast_or_clamped(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $cases = [
+            ['status=unknown', 'status'],
+            ['user_id=999999', 'user_id'],
+            ['direction=sideways', 'direction'],
+            ['per_page=0', 'per_page'],
+            ['per_page=101', 'per_page'],
+            ['page=-1', 'page'],
+        ];
+
+        foreach ($cases as [$query, $field]) {
+            $this->actingAs($admin)
+                ->getJson("/api/orders?{$query}")
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors($field);
+        }
+    }
+
+    public function test_a_regular_user_cannot_supply_the_admin_user_filter(): void
+    {
+        $user = User::factory()->create();
+        $other = User::factory()->create();
+        $this->order($user, OrderStatus::Pending, 10);
+        $this->order($other, OrderStatus::Pending, 10);
+
+        $this->actingAs($user)
+            ->getJson("/api/orders?user_id={$other->id}")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('user_id');
+    }
 }

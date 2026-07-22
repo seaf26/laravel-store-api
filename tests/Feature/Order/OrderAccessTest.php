@@ -51,8 +51,10 @@ class OrderAccessTest extends TestCase
         $other = User::factory()->create();
         $theirOrder = $this->orderFor($other);
 
+        // 404, not 403 - the order's existence must not be confirmable by a
+        // non-owner probing this endpoint.
         $this->actingAs($me)->getJson("/api/orders/{$theirOrder->id}")
-            ->assertForbidden();
+            ->assertNotFound();
     }
 
     public function test_a_user_can_view_their_own_order(): void
@@ -78,5 +80,21 @@ class OrderAccessTest extends TestCase
     public function test_listing_orders_requires_authentication(): void
     {
         $this->getJson('/api/orders')->assertUnauthorized();
+    }
+
+    public function test_viewing_an_unknown_order_returns_404(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->getJson('/api/orders/999999')
+            ->assertNotFound();
+    }
+
+    public function test_an_admin_viewing_an_unknown_order_also_returns_404(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)->getJson('/api/orders/999999')
+            ->assertNotFound();
     }
 }

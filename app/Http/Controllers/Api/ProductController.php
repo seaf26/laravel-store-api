@@ -5,18 +5,21 @@ namespace App\Http\Controllers\Api;
 use App\Events\ProductCreated;
 use App\Http\Concerns\SortsQueries;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Product\IndexProductsRequest;
 use App\Http\Requests\Product\StoreProductRequest;
 use App\Http\Requests\Product\UpdateProductRequest;
 use App\Http\Resources\ProductResource;
 use App\Models\Product;
+use App\Services\Products\ProductImageService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ProductController extends Controller
 {
     use SortsQueries;
+
+    public function __construct(private readonly ProductImageService $images) {}
 
     /**
      * Paginated catalogue listing with filtering and sorting. Open to any
@@ -25,9 +28,10 @@ class ProductController extends Controller
      * Filters: search, min_price, max_price, in_stock.
      * Sort: price | title | created_at (direction asc|desc).
      */
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(IndexProductsRequest $request): AnonymousResourceCollection
     {
         $this->authorize('viewAny', Product::class);
+        $filters = $request->validated();
 
         [$sort, $direction] = $this->resolveSort(
             $request,
@@ -36,16 +40,16 @@ class ProductController extends Controller
         );
 
         $products = Product::query()
-            ->when($request->filled('search'), function ($query) use ($request) {
-                $term = '%'.$request->string('search').'%';
+            ->when(isset($filters['search']), function ($query) use ($filters) {
+                $term = '%'.Str::lower($filters['search']).'%';
                 $query->where(function ($q) use ($term) {
-                    $q->where('title', 'like', $term)
-                        ->orWhere('description', 'like', $term);
+                    $q->whereRaw('LOWER(title) LIKE ?', [$term])
+                        ->orWhereRaw('LOWER(description) LIKE ?', [$term]);
                 });
             })
-            ->when($request->filled('min_price'), fn ($q) => $q->where('price', '>=', $request->float('min_price')))
-            ->when($request->filled('max_price'), fn ($q) => $q->where('price', '<=', $request->float('max_price')))
-            ->when($request->boolean('in_stock'), fn ($q) => $q->where('stock', '>', 0))
+            ->when(isset($filters['min_price']), fn ($q) => $q->where('price', '>=', $filters['min_price']))
+            ->when(isset($filters['max_price']), fn ($q) => $q->where('price', '<=', $filters['max_price']))
+            ->when(($filters['in_stock'] ?? false) === true || ($filters['in_stock'] ?? null) === '1', fn ($q) => $q->where('stock', '>', 0))
             ->orderBy($sort, $direction)
             ->paginate($this->perPage($request))
             ->withQueryString();
@@ -64,10 +68,10 @@ class ProductController extends Controller
     {
         $this->authorize('create', Product::class);
 
-        $data = $request->safe()->except('image');
-        $data['image_path'] = $request->file('image')->store('products', 'public');
-
-        $product = Product::create($data);
+        $product = $this->images->create(
+            $request->safe()->except('image'),
+            $request->file('image'),
+        );
 
         // Fan-out to customers happens on a queued listener, so it never delays
         // this response.
@@ -82,15 +86,11 @@ class ProductController extends Controller
     {
         $this->authorize('update', $product);
 
-        $data = $request->safe()->except('image');
-
-        if ($request->hasFile('image')) {
-            // Replace the old file so orphaned images do not accumulate.
-            $this->deleteImage($product);
-            $data['image_path'] = $request->file('image')->store('products', 'public');
-        }
-
-        $product->update($data);
+        $product = $this->images->update(
+            $product,
+            $request->safe()->except('image'),
+            $request->file('image'),
+        );
 
         return new ProductResource($product);
     }
@@ -99,16 +99,8 @@ class ProductController extends Controller
     {
         $this->authorize('delete', $product);
 
-        $this->deleteImage($product);
-        $product->delete();
+        $this->images->delete($product);
 
         return response()->json(status: 204);
-    }
-
-    private function deleteImage(Product $product): void
-    {
-        if ($product->image_path) {
-            Storage::disk('public')->delete($product->image_path);
-        }
     }
 }

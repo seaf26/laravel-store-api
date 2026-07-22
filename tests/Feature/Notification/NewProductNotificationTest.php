@@ -6,7 +6,6 @@ use App\Events\ProductCreated;
 use App\Listeners\SendNewProductNotifications;
 use App\Models\Product;
 use App\Models\User;
-use App\Notifications\NewProductNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
@@ -44,7 +43,7 @@ class NewProductNotificationTest extends TestCase
 
         $product = Product::factory()->create();
 
-        (new SendNewProductNotifications)->handle(new ProductCreated($product));
+        app(SendNewProductNotifications::class)->handle(new ProductCreated($product));
 
         $this->assertCount(1, $verified->notifications);
         $this->assertCount(0, $unverified->fresh()->notifications);
@@ -59,7 +58,7 @@ class NewProductNotificationTest extends TestCase
         $user = User::factory()->create();
         $product = Product::factory()->create();
 
-        $listener = new SendNewProductNotifications;
+        $listener = app(SendNewProductNotifications::class);
         $listener->handle(new ProductCreated($product));
         $listener->handle(new ProductCreated($product));
 
@@ -73,7 +72,7 @@ class NewProductNotificationTest extends TestCase
         $other = User::factory()->create();
         $product = Product::factory()->create();
 
-        (new SendNewProductNotifications)->handle(new ProductCreated($product));
+        app(SendNewProductNotifications::class)->handle(new ProductCreated($product));
 
         $this->actingAs($me)->getJson('/api/notifications')
             ->assertOk()
