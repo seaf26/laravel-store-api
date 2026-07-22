@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\OrderStatus;
 use App\Http\Concerns\SortsQueries;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Order\IndexOrdersRequest;
 use App\Http\Requests\Order\StoreOrderRequest;
 use App\Http\Requests\Order\UpdateOrderStatusRequest;
 use App\Http\Resources\OrderResource;
@@ -31,8 +32,9 @@ class OrderController extends Controller
      * Filters: status (and user_id for admins).
      * Sort: created_at | total (direction asc|desc).
      */
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(IndexOrdersRequest $request): AnonymousResourceCollection
     {
+        $filters = $request->validated();
         [$sort, $direction] = $this->resolveSort(
             $request,
             allowed: ['created_at', 'total'],
@@ -47,9 +49,9 @@ class OrderController extends Controller
                 $query->where('user_id', $request->user()->id);
             })
             // Only admins may filter by an arbitrary user.
-            ->when($request->user()->is_admin && $request->filled('user_id'),
-                fn ($q) => $q->where('user_id', $request->integer('user_id')))
-            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+            ->when($request->user()->is_admin && isset($filters['user_id']),
+                fn ($q) => $q->where('user_id', $filters['user_id']))
+            ->when(isset($filters['status']), fn ($q) => $q->where('status', $filters['status']))
             ->orderBy($sort, $direction)
             ->paginate($this->perPage($request))
             ->withQueryString();

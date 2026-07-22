@@ -63,7 +63,9 @@ queue** and processed by the worker, so they never delay an API response. If you
 In production, keep at least one queue worker under a process supervisor and invoke
 `php artisan schedule:run` every minute from cron (or use an equivalent scheduler). The
 application runs `model:prune` daily, removing OTP records older than one day. Without the
-scheduler, these spent or expired rows accumulate.
+scheduler, these spent or expired rows accumulate. It also runs
+`product-images:cleanup --limit=500` every five minutes to retry filesystem deletions that
+could not be completed after a successful product update or delete.
 
 ### Tests
 
@@ -76,8 +78,9 @@ which also forces `SMS_SENDER=log` regardless of your local `.env`, so the suite
 makes a real Twilio call) and is fully self-contained.
 
 GitHub Actions runs Composer validation and the locked-dependency security audit, Pint,
-and the full SQLite suite on every push and pull request. A separate MySQL 8 job runs the
-suite with `pdo_mysql` to catch production-database compatibility issues.
+and the full SQLite suite on every push and pull request. Dedicated MySQL 8 and PostgreSQL
+16 jobs first run the production concurrency tests with two independent PHP processes,
+then run the complete suite against that database engine.
 
 ---
 
@@ -222,7 +225,9 @@ set the `base_url`, `token`, and `admin_token` collection variables.
 The authoritative transaction, locking, fingerprint, and OTP-claim diagrams are kept as
 renderable Mermaid source in [`docs/reliability.md`](docs/reliability.md). The exact changed
 HTTP behaviors are also recorded in the
-[`API reliability contract`](specs/001-api-reliability-hardening/contracts/api-contract.md).
+[`P0 reliability contract`](specs/001-api-reliability-hardening/contracts/api-contract.md)
+and the
+[`resilience-completion contract`](specs/002-api-resilience-completion/contracts/api-contract.md).
 
 ### Order idempotency
 
@@ -233,6 +238,17 @@ different normalized order returns `409` with
 `{"message":"The idempotency key was already used with a different request."}` and does
 not change orders or stock. Keys longer than 64 characters return the standard `422`
 validation response.
+
+### Listing query validation
+
+Product and order listing parameters are validated before a query is built. Bad numeric,
+boolean, enum, sorting, or pagination values return Laravel's standard `422` JSON
+validation envelope instead of being silently cast or clamped.
+
+| Listing | Accepted query values |
+| --- | --- |
+| Products | `search` up to 200 characters; non-negative `min_price`/`max_price` with `max_price >= min_price`; boolean `in_stock`; `sort=price\|title\|created_at`; `direction=asc\|desc`; `per_page=1..100`; `page>=1` |
+| Orders | a defined order `status`; admin-only existing `user_id`; `sort=created_at\|total`; `direction=asc\|desc`; `per_page=1..100`; `page>=1` |
 
 ---
 
@@ -306,11 +322,13 @@ All listeners are `ShouldQueue` + `afterCommit`.
 - Every fan-out runs on a **queued** listener dispatched **after** the database
   transaction commits, so the API response returns immediately and a notification failure
   can never roll back the product/order operation.
-- **Retries are safe.** Each listener de-duplicates:
-  - *New product* — skips users already notified for that product.
-  - *Back in stock* — claims each subscription by deleting it *before* sending, so a retry
-    or a concurrent worker finds the row gone and never notifies twice.
-  - *Order status* — de-duplicates on the status-history id.
+- **Retries and concurrent workers are safe.** Every logical recipient/event pair receives
+  a deterministic notification UUID. The database notification insert is the atomic
+  deduplication claim; a duplicate primary-key insert is a clean no-op.
+- Notifications that also use SMS write the database notification first. A duplicate
+  worker therefore stops before the SMS channel, while a first delivery can continue to
+  SMS. Back-in-stock subscriptions are deleted only after this durable delivery succeeds;
+  a retryable database failure preserves the subscription.
 - **Back-in-stock and order-status notifications also send an SMS** (`App\Notifications\Channels\SmsChannel`),
   best-effort: a gateway failure is logged (`SMS notification delivery failed`) and does
   **not** fail the queued job or the database notification that already succeeded. Only
@@ -322,8 +340,10 @@ All listeners are `ShouldQueue` + `afterCommit`.
   is serialised, so stock can never be oversold.
 - It is **all-or-nothing**: if any requested quantity is short, the whole transaction rolls
   back — no order, no items, no partial stock change (`422 Insufficient stock.`).
-- Row-level locking is enforced on MySQL/Postgres; SQLite serialises writers, which also
-  prevents oversell in development/tests.
+- Row-level locking is enforced on MySQL/Postgres. The production concurrency test launches
+  two independent PHP processes behind a shared barrier and proves one remaining stock unit
+  creates exactly one order on both engines. SQLite stays the fast development/test path and
+  skips this engine-specific proof.
 - **Unit price is snapshotted** on each order item, so later product price edits never
   change an existing order's totals. Money is computed with bcmath.
 - **Cancelling an order restocks its items**, in the same transaction as the status change
@@ -357,6 +377,16 @@ All listeners are `ShouldQueue` + `afterCommit`.
   regular user still returns 403, since that failure isn't about hiding a resource's
   existence.
 
+### Product image failure safety
+
+- New images are stored before the catalogue transaction. If persistence fails, the new
+  file is compensated and the previous product/image state remains unchanged.
+- Replaced or deleted image paths are recorded in `pending_file_deletions` inside the same
+  transaction as the product mutation. Deletion is attempted after commit, so a failed
+  database write can never remove an image that the database still references.
+- A failed filesystem delete remains durable cleanup work for the scheduled
+  `product-images:cleanup` command. Cleanup is idempotent: an already-missing file is success.
+
 ### Assumptions
 - Admins are provisioned by seeding, not via a public endpoint.
 - `notify-me` (back-in-stock subscription) only accepts out-of-stock products; subscribing
@@ -376,9 +406,12 @@ app/
     Channels/       SmsChannel (routes a notification's toSms() through SmsSender)
   Policies/         ProductPolicy, OrderPolicy
   Services/
+    Notifications/  deterministic database-backed delivery deduplication
+    Products/       failure-safe image persistence and cleanup compensation
     Sms/            SmsSender contract + LogSmsSender/TwilioSmsSender (swappable gateway)
     Otp/            OtpService (hashing, expiry, rate limiting, purpose-specific wording)
     Orders/         OrderService (atomic stock), OrderStatusService (transitions, cancel-restock)
+app/Console/Commands/CleanupProductImages.php
 database/seeders/   AdminUserSeeder, ProductSeeder
 config/store.php    OTP, SMS-sender/Twilio, and admin-seed settings
 docs/postman_collection.json

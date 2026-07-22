@@ -395,7 +395,7 @@
               "status": "Unprocessable Content",
               "code": 422,
               "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"message\": \"Invalid sort field. Allowed: price, title, created_at.\",\n  \"errors\": {\n    \"sort\": [\"Invalid sort field. Allowed: price, title, created_at.\"]\n  }\n}"
+              "body": "{\n  \"message\": \"The selected sort is invalid.\",\n  \"errors\": {\n    \"sort\": [\"The selected sort is invalid.\"]\n  }\n}"
             }
           ]
         },
@@ -639,8 +639,8 @@
                 { "key": "status", "value": "", "description": "pending|confirmed|processing|shipped|delivered|cancelled" },
                 { "key": "user_id", "value": "", "description": "Admin only", "disabled": true },
                 { "key": "sort", "value": "created_at", "description": "created_at | total" },
-                { "key": "direction", "value": "desc" },
-                { "key": "per_page", "value": "15" },
+                { "key": "direction", "value": "desc", "description": "asc | desc" },
+                { "key": "per_page", "value": "15", "description": "1-100" },
                 { "key": "page", "value": "1", "description": "Page number, starts at 1" }
               ]
             }
@@ -653,6 +653,14 @@
               "code": 200,
               "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{\n  \"data\": [\n    {\n      \"id\": 10,\n      \"user_id\": 1,\n      \"status\": \"pending\",\n      \"total\": \"102.48\",\n      \"items\": [\n        { \"product_id\": 1, \"title\": \"Running Shoe\", \"quantity\": 2, \"unit_price\": \"49.99\", \"line_total\": \"99.98\" }\n      ],\n      \"created_at\": \"2026-07-20T13:40:00+00:00\",\n      \"updated_at\": \"2026-07-20T13:40:00+00:00\"\n    }\n  ],\n  \"links\": { \"first\": \"...\", \"last\": \"...\", \"prev\": null, \"next\": null },\n  \"meta\": { \"current_page\": 1, \"last_page\": 1, \"per_page\": 15, \"total\": 1 }\n}"
+            },
+            {
+              "name": "422 Invalid status",
+              "originalRequest": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/orders?status=unknown", "host": ["{{base_url}}"], "path": ["api", "orders"], "query": [{ "key": "status", "value": "unknown" }] } },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"message\": \"The selected status is invalid.\",\n  \"errors\": {\n    \"status\": [\"The selected status is invalid.\"]\n  }\n}"
             }
           ]
         },

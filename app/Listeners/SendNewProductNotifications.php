@@ -5,11 +5,13 @@ namespace App\Listeners;
 use App\Events\ProductCreated;
 use App\Models\User;
 use App\Notifications\NewProductNotification;
+use App\Services\Notifications\NotificationDeduplicator;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Facades\Notification;
 
 class SendNewProductNotifications implements ShouldQueue
 {
+    public function __construct(private readonly NotificationDeduplicator $deduplicator) {}
+
     /**
      * Run only after the surrounding transaction commits, so the listener never
      * fires for a product that was rolled back.
@@ -20,18 +22,19 @@ class SendNewProductNotifications implements ShouldQueue
     {
         $product = $event->product;
 
-        // Verified, non-admin customers are the audience. Users who already hold
-        // a notification for this product are excluded, so re-running the job
-        // (a retry after a partial failure) never produces a duplicate.
+        // Verified, non-admin customers are the audience. The deterministic
+        // database notification id is the atomic claim for retries/races.
         User::query()
             ->where('is_admin', false)
             ->whereNotNull('phone_verified_at')
-            ->whereDoesntHave('notifications', function ($query) use ($product) {
-                $query->where('type', NewProductNotification::class)
-                    ->where('data->product_id', $product->id);
-            })
             ->chunkById(500, function ($users) use ($product) {
-                Notification::send($users, new NewProductNotification($product));
+                foreach ($users as $user) {
+                    $this->deduplicator->sendOnce(
+                        $user,
+                        new NewProductNotification($product),
+                        "new-product:{$product->id}",
+                    );
+                }
             });
     }
 }

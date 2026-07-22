@@ -2,8 +2,9 @@
 
 This document is the authoritative architecture view for the API reliability controls.
 The [Postman collection](postman_collection.json) contains runnable HTTP examples, while
-the [feature contract](../specs/001-api-reliability-hardening/contracts/api-contract.md)
-defines the exact changed status codes, headers, and error bodies.
+the [P0 feature contract](../specs/001-api-reliability-hardening/contracts/api-contract.md)
+and [resilience-completion contract](../specs/002-api-resilience-completion/contracts/api-contract.md)
+define the exact changed status codes, headers, and error bodies.
 
 ## Public behavior map
 
@@ -14,7 +15,11 @@ defines the exact changed status codes, headers, and error bodies.
 | OTP redemption | Verification and password reset | Five attempts per minute per source and phone/purpose plus an atomic claim | One code can produce at most one successful action |
 | Order retry | `POST /api/orders` with `Idempotency-Key` | Canonical SHA-256 request fingerprint stored with the key | Matching payload replays with `200`; different payload returns `409` |
 | Status mutation | `PATCH /api/orders/{order}/status` | Reload and row-lock the order inside the transaction | Stale requests use committed state; duplicate status is a no-op |
+| Product media | Product create, update, and delete | Transactional deletion intent plus compensating cleanup | Failed persistence keeps the referenced image; failed file deletion is retried |
+| Notification retry | Queued event listeners | Deterministic database-notification UUID | Concurrent/retried delivery creates one database notification and at most one SMS attempt |
+| Listing filters | `GET /api/products` and `GET /api/orders` | Dedicated Form Requests with allow-listed values | Invalid filters return `422` instead of being silently cast |
 | OTP retention | Scheduler | Daily `model:prune` | Consumed or expired OTP rows older than one day are removed |
+| Image cleanup | Scheduler | Five-minute `product-images:cleanup` retry | Durable pending deletions are retried idempotently |
 
 ## Reliability data model
 
@@ -168,6 +173,79 @@ sequenceDiagram
     end
 ```
 
+## Product image persistence and cleanup
+
+The database is the source of truth for which image belongs to a product. Old image paths
+are never deleted before the product transaction commits.
+
+```mermaid
+sequenceDiagram
+    participant A as Admin client
+    participant P as ProductImageService
+    participant F as Public filesystem
+    participant D as Database
+    participant S as Scheduler
+
+    A->>P: update product with replacement image
+    P->>F: store new image
+    P->>D: begin transaction
+    P->>D: update product path
+    P->>D: insert pending deletion for old path
+    alt database mutation fails
+        D-->>P: roll back
+        P->>F: compensate new image
+        P-->>A: error; old product/image remain
+    else transaction commits
+        D-->>P: committed
+        P->>F: attempt old-image deletion
+        alt deletion succeeds or file is already absent
+            P->>D: remove pending deletion
+        else filesystem unavailable
+            P->>D: retain error and attempt count
+            S->>P: product-images:cleanup
+            P->>F: retry idempotently
+        end
+        P-->>A: successful catalogue response
+    end
+```
+
+Create compensation is also tracked before deletion is attempted. If the tracking table
+itself is unavailable, cleanup falls back to a best-effort direct delete without masking
+the original persistence exception.
+
+## Notification delivery deduplication
+
+Each listener derives an RFC 4122-shaped deterministic UUID from the notification class,
+recipient identity, and a stable event key (product, subscription, or status-history ID).
+Laravel stores that UUID as the database notification primary key.
+
+```mermaid
+sequenceDiagram
+    participant Q1 as Queue worker 1
+    participant Q2 as Queue worker 2
+    participant D as notifications table
+    participant S as SMS channel
+
+    Q1->>D: insert deterministic notification UUID
+    Q2->>D: insert same UUID
+    D-->>Q1: inserted
+    D-->>Q2: unique violation
+    Q2-->>Q2: treat duplicate as delivered no-op
+    Q1->>S: send SMS when configured
+```
+
+The database channel is deliberately first for mixed-channel notifications. A duplicate
+worker cannot reach SMS. Back-in-stock subscriptions are deleted only after durable
+delivery, so transient database failures remain retryable.
+
+## Listing validation
+
+`IndexProductsRequest` and `IndexOrdersRequest` validate all supported query fields before
+controllers build their filters. Pagination is limited to 1–100 rows, pages start at one,
+sort fields and directions are allow-listed, product price ranges must be coherent, and
+order status must be a real `OrderStatus`. Only administrators may provide `user_id`.
+Invalid input uses the standard Laravel `422` validation envelope.
+
 ## Verification and limits
 
 Run the local acceptance gate with:
@@ -180,8 +258,12 @@ composer test
 php artisan schedule:list
 ```
 
-GitHub Actions repeats the suite on SQLite and MySQL 8. SQLite is the fast local path;
-the MySQL job verifies migration and SQL compatibility. The current tests exercise stale
-models and compare-and-set loss, but do not launch two truly simultaneous request
-processes. PostgreSQL and the hosted GitHub runner must not be described as locally
-verified until those checks have actually run.
+GitHub Actions repeats the suite on SQLite, MySQL 8, and PostgreSQL 16. SQLite is the fast
+local path and intentionally skips the engine-specific production concurrency test. The
+MySQL and PostgreSQL jobs launch two independent PHP processes, synchronize them behind a
+shared barrier, and require both the one-unit stock race and notification-deduplication
+race to run without skips before the complete suite executes.
+
+The same focused multi-process tests have been run locally against disposable MySQL 8 and
+PostgreSQL 16 databases. A hosted GitHub Actions result is still a separate verification
+boundary and should only be reported after the pushed workflow has completed.

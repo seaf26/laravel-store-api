@@ -4,10 +4,13 @@ namespace App\Listeners;
 
 use App\Events\OrderStatusChanged;
 use App\Notifications\OrderStatusChangedNotification;
+use App\Services\Notifications\NotificationDeduplicator;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
 class SendOrderStatusNotification implements ShouldQueue
 {
+    public function __construct(private readonly NotificationDeduplicator $deduplicator) {}
+
     /**
      * Runs after the status change has committed, so a notification failure can
      * never roll the status change back.
@@ -19,18 +22,10 @@ class SendOrderStatusNotification implements ShouldQueue
         $history = $event->history;
         $order = $history->order;
 
-        // De-duplicate on the history id: if a notification for this exact
-        // change already exists, a retried job must not send it again.
-        $alreadySent = $order->user
-            ->notifications()
-            ->where('type', OrderStatusChangedNotification::class)
-            ->where('data->history_id', $history->id)
-            ->exists();
-
-        if ($alreadySent) {
-            return;
-        }
-
-        $order->user->notify(new OrderStatusChangedNotification($history));
+        $this->deduplicator->sendOnce(
+            $order->user,
+            new OrderStatusChangedNotification($history),
+            "order-status-history:{$history->id}",
+        );
     }
 }

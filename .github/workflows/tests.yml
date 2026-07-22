@@ -44,7 +44,7 @@ jobs:
         run: php artisan test
 
   mysql:
-    name: MySQL 8 compatibility
+    name: MySQL 8 concurrency and compatibility
     runs-on: ubuntu-latest
     env:
       DB_CONNECTION: mysql
@@ -87,6 +87,61 @@ jobs:
 
       - name: Generate application key
         run: php artisan key:generate
+
+      - name: Prove independent-process concurrency
+        run: php artisan test --filter=ProductionDatabaseConcurrencyTest --fail-on-skipped
+
+      - name: Run tests
+        run: php artisan test
+
+  postgres:
+    name: PostgreSQL 16 concurrency and compatibility
+    runs-on: ubuntu-latest
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: laravel_test
+      DB_USERNAME: postgres
+      DB_PASSWORD: password
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: laravel_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready --username=postgres --dbname=laravel_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: bcmath, mbstring, dom, fileinfo, pdo_pgsql
+          coverage: none
+
+      - name: Copy .env
+        run: cp .env.example .env
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Generate application key
+        run: php artisan key:generate
+
+      - name: Prove independent-process concurrency
+        run: php artisan test --filter=ProductionDatabaseConcurrencyTest --fail-on-skipped
 
       - name: Run tests
         run: php artisan test

@@ -18,7 +18,7 @@ class BackInStockNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return [SmsChannel::class, 'database'];
+        return ['database', SmsChannel::class];
     }
 
     /**

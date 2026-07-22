@@ -2,18 +2,25 @@
 
 namespace Tests\Feature\Maintenance;
 
-use Illuminate\Support\Facades\Artisan;
+use Illuminate\Console\Scheduling\Schedule;
 use Tests\TestCase;
 
 class ScheduledMaintenanceTest extends TestCase
 {
     public function test_model_pruning_is_scheduled_daily(): void
     {
-        $this->assertSame(0, Artisan::call('schedule:list'));
+        $events = collect(app(Schedule::class)->events());
 
-        $output = Artisan::output();
+        $modelPrune = $events->first(
+            fn ($event): bool => str_contains($event->command, 'model:prune'),
+        );
+        $imageCleanup = $events->first(
+            fn ($event): bool => str_contains($event->command, 'product-images:cleanup --limit=500'),
+        );
 
-        $this->assertStringContainsString('0 0 * * *', $output);
-        $this->assertStringContainsString('model:prune', $output);
+        $this->assertNotNull($modelPrune);
+        $this->assertSame('0 0 * * *', $modelPrune->expression);
+        $this->assertNotNull($imageCleanup);
+        $this->assertSame('*/5 * * * *', $imageCleanup->expression);
     }
 }

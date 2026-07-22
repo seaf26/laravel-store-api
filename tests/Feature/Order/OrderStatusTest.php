@@ -158,7 +158,7 @@ class OrderStatusTest extends TestCase
             'changed_by' => $admin->id,
         ]);
 
-        $listener = new SendOrderStatusNotification;
+        $listener = app(SendOrderStatusNotification::class);
         $listener->handle(new OrderStatusChanged($history));
         $listener->handle(new OrderStatusChanged($history));
 

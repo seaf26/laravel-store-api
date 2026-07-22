@@ -6,12 +6,14 @@ use App\Events\ProductRestocked;
 use App\Models\StockSubscription;
 use App\Models\User;
 use App\Notifications\BackInStockNotification;
+use App\Services\Notifications\NotificationDeduplicator;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Facades\Notification;
 
 class SendBackInStockNotifications implements ShouldQueue
 {
     public bool $afterCommit = true;
+
+    public function __construct(private readonly NotificationDeduplicator $deduplicator) {}
 
     public function handle(ProductRestocked $event): void
     {
@@ -20,24 +22,26 @@ class SendBackInStockNotifications implements ShouldQueue
         $product->stockSubscriptions()
             ->select('id', 'user_id')
             ->chunkById(500, function ($subscriptions) use ($product) {
-                $claimedUserIds = [];
+                $users = User::whereIn('id', $subscriptions->pluck('user_id'))->get()->keyBy('id');
 
                 foreach ($subscriptions as $subscription) {
-                    // Claim the subscription by deleting it first. The DELETE is
-                    // atomic and returns the number of rows removed, so only the
-                    // worker that actually removed the row goes on to notify.
-                    // A retry (or a concurrent worker) finds the row already
-                    // gone, so the same user is never notified twice.
-                    if (StockSubscription::whereKey($subscription->id)->delete()) {
-                        $claimedUserIds[] = $subscription->user_id;
-                    }
-                }
+                    $user = $users->get($subscription->user_id);
 
-                if ($claimedUserIds !== []) {
-                    Notification::send(
-                        User::whereIn('id', $claimedUserIds)->get(),
+                    if (! $user) {
+                        StockSubscription::whereKey($subscription->id)->delete();
+
+                        continue;
+                    }
+
+                    // Keep the subscription until the database notification is
+                    // either newly durable or confirmed as an existing duplicate.
+                    $this->deduplicator->sendOnce(
+                        $user,
                         new BackInStockNotification($product),
+                        "back-in-stock-subscription:{$subscription->id}",
                     );
+
+                    StockSubscription::whereKey($subscription->id)->delete();
                 }
             });
     }

@@ -99,7 +99,7 @@ class BackInStockNotificationTest extends TestCase
 
         // Restock and run the listener.
         $product->update(['stock' => 10]);
-        (new SendBackInStockNotifications)->handle(new ProductRestocked($product));
+        app(SendBackInStockNotifications::class)->handle(new ProductRestocked($product));
 
         $this->assertCount(1, $subscriber->notifications);
         $this->assertSame('back_in_stock', $subscriber->notifications->first()->data['type']);
@@ -116,7 +116,7 @@ class BackInStockNotificationTest extends TestCase
         StockSubscription::create(['user_id' => $subscriber->id, 'product_id' => $product->id]);
         $product->update(['stock' => 10]);
 
-        $listener = new SendBackInStockNotifications;
+        $listener = app(SendBackInStockNotifications::class);
         $listener->handle(new ProductRestocked($product));
         // A retry must not send a second notification: the subscription was
         // already claimed (deleted) on the first run.
